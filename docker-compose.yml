@@ -280,3 +280,42 @@ services:
         limits:
           cpus: "0.25"
           memory: 64M
+
+  loki:
+    <<: *common
+    image: grafana/loki:3.0.0
+    container_name: thuongmaidientu-loki
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    networks: [monitoring]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  promtail:
+    <<: *common
+    image: grafana/promtail:3.0.0
+    container_name: thuongmaidientu-promtail
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    networks: [monitoring]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
