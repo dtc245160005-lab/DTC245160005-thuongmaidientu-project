@@ -1,0 +1,15 @@
+{
+  "name": "thuongmaidientu-app",
+  "version": "1.0.0",
+  "description": "Website thuong mai dien tu - De 9",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5",
+    "prom-client": "^15.1.3"
+  }
+}

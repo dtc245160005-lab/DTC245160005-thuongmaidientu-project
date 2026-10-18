@@ -1,0 +1,148 @@
+name: thuongmaidientu-project
+
+x-common: &common
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+networks:
+  frontend:
+    name: thuongmaidientu_frontend
+  backend:
+    name: thuongmaidientu_backend
+    internal: true
+  monitoring:
+    name: thuongmaidientu_monitoring
+    internal: true
+
+volumes:
+  db_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+
+services:
+  db:
+    <<: *common
+    image: mysql:8.4
+    container_name: thuongmaidientu-db
+    environment:
+      TZ: ${TZ}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_HOST: localhost
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      APP_DB_USER: ${APP_DB_USER}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      DBADMIN_USER: ${DBADMIN_USER}
+      DBADMIN_PASSWORD: ${DBADMIN_PASSWORD}
+      EXPORTER_DB_PASSWORD: ${EXPORTER_DB_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --local-infile=0
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u\"$$APP_DB_USER\" -p\"$$APP_DB_PASSWORD\" -e 'SELECT 1' \"$$MYSQL_DATABASE\" > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 768M
+
+  phpmyadmin:
+    <<: *common
+    image: phpmyadmin:5.2
+    container_name: thuongmaidientu-phpmyadmin
+    environment:
+      TZ: ${TZ}
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_ABSOLUTE_URI: https://${SERVER_IP}/phpmyadmin/
+      UPLOAD_LIMIT: 64M
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [frontend, backend]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  app:
+    <<: *common
+    build: ./app
+    image: thuongmaidientu-app:1.0
+    container_name: thuongmaidientu-app
+    environment:
+      TZ: ${TZ}
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${MYSQL_DATABASE}
+      DB_USER: ${APP_DB_USER}
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [frontend, backend, monitoring]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  nginx:
+    <<: *common
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    container_name: thuongmaidientu-nginx
+    environment:
+      TZ: ${TZ}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    volumes:
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [frontend, monitoring]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8081/stub_status"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M

@@ -1,0 +1,196 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, Arial, sans-serif;
+  background: #f5f7fb;
+  color: #243047;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 24px;
+  background: #1859a9;
+  color: #fff;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.tab {
+  margin-left: 6px;
+  padding: 8px 14px;
+  border: 1px solid #ffffff80;
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: #fff;
+  color: #1859a9;
+}
+
+main {
+  max-width: 1100px;
+  min-height: 65vh;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filters select,
+.filters input,
+form input {
+  padding: 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.filters input {
+  flex: 1;
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  padding: 16px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 4px #00000018;
+}
+
+.product .emoji {
+  font-size: 48px;
+  text-align: center;
+}
+
+.product h3 {
+  margin: 8px 0 4px;
+  font-size: 16px;
+}
+
+.price {
+  font-size: 18px;
+  font-weight: 700;
+  color: #b42318;
+}
+
+.muted {
+  margin: 2px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+button.primary {
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #1859a9;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.cart-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cart-row .name {
+  flex: 1;
+}
+
+.qty button {
+  width: 28px;
+  height: 28px;
+}
+
+.total {
+  font-size: 18px;
+  text-align: right;
+}
+
+form.card {
+  display: grid;
+  gap: 10px;
+  max-width: 480px;
+  margin-left: auto;
+}
+
+.order {
+  margin-bottom: 12px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #dbeafe;
+  font-size: 12px;
+}
+
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  max-width: min(400px, calc(100vw - 40px));
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #243047;
+  color: #fff;
+}
+
+footer {
+  padding: 24px;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    padding: 14px 16px;
+  }
+
+  .tab {
+    margin: 0 4px 4px 0;
+  }
+
+  .filters {
+    flex-direction: column;
+  }
+
+  .cart-row {
+    flex-wrap: wrap;
+  }
+}

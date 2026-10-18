@@ -1,0 +1,14 @@
+# Mat khau va cau hinh rieng
+.env
+.env.*
+!.env.example
+nginx/.htpasswd
+
+# Khong dua chung chi va khoa HTTPS len GitHub
+nginx/certs/*
+!nginx/certs/.gitkeep
+
+# File phat sinh
+node_modules/
+*.log
+.DS_Store
