@@ -1,0 +1,130 @@
+{
+  "uid": "thuongmaidientu-overview",
+  "title": "Thương mại điện tử - Tổng quan hệ thống",
+  "tags": ["thuongmaidientu"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Nguồn đang hoạt động",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(up)" }],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Nguồn bị lỗi",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "count(up == 0) or vector(0)" }],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 3, "type": "stat", "title": "MySQL hoạt động",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "mysql_up" }],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Đơn hàng đã tạo",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(thuongmaidientu_orders_created_total)" }],
+      "fieldConfig": { "defaults": { "decimals": 0 }, "overrides": [] },
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 5, "type": "stat", "title": "Giá trị đơn hàng (VND)",
+      "gridPos": { "x": 0, "y": 4, "w": 8, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(thuongmaidientu_revenue_vnd_total)" }],
+      "fieldConfig": { "defaults": { "decimals": 0, "unit": "locale" }, "overrides": [] },
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 6, "type": "stat", "title": "Kết nối Nginx đang mở",
+      "gridPos": { "x": 8, "y": 4, "w": 8, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "nginx_connections_active" }],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Container - CPU (%)",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"thuongmaidientu-.+\"}[1m])) * 100", "legendFormat": "{{name}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Container - RAM",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (name) (container_memory_working_set_bytes{name=~\"thuongmaidientu-.+\"})", "legendFormat": "{{name}}" }],
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Nginx - request mỗi giây",
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "rate(nginx_http_requests_total[1m])", "legendFormat": "requests/s" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Ứng dụng - request theo mã trạng thái",
+      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (status) (rate(thuongmaidientu_http_requests_total[1m]))", "legendFormat": "{{status}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Ứng dụng - độ trễ p95",
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(thuongmaidientu_http_request_duration_seconds_bucket[5m])))", "legendFormat": "p95" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "MySQL - truy vấn mỗi giây",
+      "gridPos": { "x": 0, "y": 24, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "rate(mysql_global_status_queries[1m])", "legendFormat": "queries/s" }],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "id": 13, "type": "timeseries", "title": "MySQL - kết nối",
+      "gridPos": { "x": 6, "y": 24, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "mysql_global_status_threads_connected", "legendFormat": "connections" }],
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 14, "type": "timeseries", "title": "Máy chủ - CPU (%)",
+      "gridPos": { "x": 12, "y": 24, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100", "legendFormat": "CPU" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "id": 15, "type": "timeseries", "title": "Máy chủ - RAM đã dùng (%)",
+      "gridPos": { "x": 18, "y": 24, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100", "legendFormat": "RAM" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "id": 16, "type": "logs", "title": "Log ứng dụng và Nginx",
+      "gridPos": { "x": 0, "y": 32, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [{ "refId": "A", "expr": "{service=~\"app|nginx\"}" }],
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending" }
+    }
+  ]
+}
