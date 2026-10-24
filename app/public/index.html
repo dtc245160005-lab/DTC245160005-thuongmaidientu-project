@@ -3,53 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Website thương mại điện tử</title>
-  <link rel="stylesheet" href="/style.css">
+  <meta name="theme-color" content="#071a38">
+  <meta name="description" content="NEXTECH — cửa hàng công nghệ với những lựa chọn đáng giá cho mỗi ngày.">
+  <title>NEXTECH — Công nghệ cho cuộc sống mới</title>
+  <link rel="stylesheet" href="/style.css?v=20261024-products1">
 </head>
 <body>
-  <header class="topbar">
-    <h1>🛍️ Thương mại điện tử</h1>
-    <nav aria-label="Điều hướng chính">
-      <button type="button" class="tab active" data-view="products">Sản phẩm</button>
-      <button type="button" class="tab" data-view="cart">
-        Giỏ hàng (<span id="cart-count">0</span>)
-      </button>
-      <button type="button" class="tab" data-view="orders">Đơn hàng</button>
-    </nav>
-  </header>
-
-  <main>
-    <section id="view-products" class="view">
-      <div class="filters">
-        <select id="category" aria-label="Danh mục sản phẩm">
-          <option value="">Tất cả danh mục</option>
-        </select>
-        <input id="search" type="search" placeholder="Tìm sản phẩm..." aria-label="Tìm sản phẩm">
-      </div>
-      <div id="product-list" class="grid"></div>
-    </section>
-
-    <section id="view-cart" class="view hidden">
-      <div id="cart-items"></div>
-      <p class="total">Tổng cộng: <strong id="cart-total">0 ₫</strong></p>
-
-      <form id="checkout-form" class="card">
-        <h3>Thông tin giao hàng</h3>
-        <input name="customerName" placeholder="Họ và tên" required maxlength="100">
-        <input name="phone" placeholder="Số điện thoại (VD: 0912345678)"
-               required pattern="0[0-9]{9,10}">
-        <input name="address" placeholder="Địa chỉ nhận hàng" required maxlength="255">
-        <button type="submit" class="primary">Đặt hàng</button>
-      </form>
-    </section>
-
-    <section id="view-orders" class="view hidden">
-      <div id="order-list"></div>
-    </section>
-  </main>
-
-  <div id="toast" class="toast hidden" role="status"></div>
-  <footer>Đề 9 · Ma Đình Tuyển · DTC245160005</footer>
-  <script src="/app.js"></script>
+  <div id="app"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/commerce-app.mjs?v=20261024-products1"></script>
 </body>
 </html>

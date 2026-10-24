@@ -95,6 +95,12 @@ services:
       DB_NAME: ${MYSQL_DATABASE}
       DB_USER: ${APP_DB_USER}
       DB_PASSWORD: ${APP_DB_PASSWORD}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      # Chỉ tin X-Forwarded-For từ Nginx trong mạng Docker nội bộ.
+      TRUST_PROXY: loopback, uniquelocal
+      # Bật tạm route /api/debug/error khi cần demo log lỗi.
+      ENABLE_DEBUG_ROUTES: ${ENABLE_DEBUG_ROUTES:-false}
     depends_on:
       db:
         condition: service_healthy

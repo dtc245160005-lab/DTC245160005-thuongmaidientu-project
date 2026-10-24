@@ -5,7 +5,9 @@
   "main": "server.js",
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.mjs",
+    "admin:create": "node scripts/create-admin.cjs"
   },
   "dependencies": {
     "express": "^4.21.2",
