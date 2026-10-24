@@ -30,16 +30,18 @@ async function setup(){
   const login=await post('/api/admin/login',{email:env.ADMIN_EMAIL,password:'Admin@12345'});
   const cookie=login.headers.get('set-cookie').split(';')[0];
   const order=(sku,qty,extra={})=>{const accessToken=token();return post('/api/nextech/orders',{idempotencyKey:crypto.randomUUID(),accessToken,paymentMethod:'COD',items:[{sku,qty}],address,...extra}).then(r=>({...r,accessToken}));};
-  ctx={base,pool,server,post,stock,cookie,order};
+  // Cửa hàng không còn sản phẩm mẫu cố định: mỗi test tự tạo sản phẩm qua API quản trị.
+  const product=async(price,stock)=>(await post('/api/admin/products',{name:'Sản phẩm test',price,stock},{Cookie:cookie})).body.variants[0].sku;
+  ctx={base,pool,server,post,stock,cookie,order,product};
 }
 
 test('NEXTECH orders persist in MySQL',{skip},async t=>{
   await setup();
   t.after(async()=>{await new Promise(resolve=>ctx.server.close(resolve));await ctx.pool.end();});
-  const {post,stock,cookie,order,pool,base}=ctx;
+  const {post,stock,cookie,order,pool,base,product}=ctx;
 
   await t.test('server prices the order, reserves stock and is idempotent',async()=>{
-    const sku='NX-002-STD',before=await stock(sku);
+    const sku=await product(42990000,7),before=await stock(sku);
     const accessToken=token(),body={idempotencyKey:crypto.randomUUID(),accessToken,paymentMethod:'COD',couponCode:'NEX10',items:[{sku,qty:2}],address};
     const first=await post('/api/nextech/orders',body);
     assert.equal(first.status,201);
@@ -56,7 +58,7 @@ test('NEXTECH orders persist in MySQL',{skip},async t=>{
   });
 
   await t.test('client-side prices are ignored and overselling is rejected',async()=>{
-    const sku='NX-007-STD',available=(await stock(sku)).on_hand-(await stock(sku)).reserved;
+    const sku=await product(7490000,5),available=(await stock(sku)).on_hand-(await stock(sku)).reserved;
     const tooMany=await post('/api/nextech/orders',{idempotencyKey:crypto.randomUUID(),accessToken:token(),paymentMethod:'COD',items:[{sku,qty:available+1,unitPrice:1}],total:1,address});
     assert.equal(tooMany.status,409);
     const results=await Promise.all(Array.from({length:available+3},()=>order(sku,1)));
@@ -66,7 +68,7 @@ test('NEXTECH orders persist in MySQL',{skip},async t=>{
   });
 
   await t.test('customer actions need the order token; cancel releases stock',async()=>{
-    const sku='NX-008-STD',before=await stock(sku);
+    const sku=await product(5290000,17),before=await stock(sku);
     const created=await order(sku,1);
     const path=`/api/nextech/orders/${created.body.id}/cancel`;
     assert.equal((await post(path,{},{'X-Order-Token':token()})).status,403);
@@ -78,7 +80,7 @@ test('NEXTECH orders persist in MySQL',{skip},async t=>{
   });
 
   await t.test('online payment gates shipping; shipping consumes stock once',async()=>{
-    const sku='NX-009-STD',before=await stock(sku);
+    const sku=await product(4290000,19),before=await stock(sku);
     const created=await order(sku,1,{paymentMethod:'MOMO_DEMO'});
     const id=created.body.id,auth={'X-Order-Token':created.accessToken},adminHeaders={Cookie:cookie};
     assert.equal(created.body.paymentStatus,'PENDING');
@@ -99,7 +101,7 @@ test('NEXTECH orders persist in MySQL',{skip},async t=>{
   });
 
   await t.test('expired online payment is cancelled and its stock released',async()=>{
-    const sku='NX-010-STD',before=await stock(sku);
+    const sku=await product(2190000,6),before=await stock(sku);
     const created=await order(sku,1,{paymentMethod:'VNPAY_DEMO'});
     await pool.execute('UPDATE nx_orders SET created_at = NOW(3) - INTERVAL 16 MINUTE WHERE id=?',[created.body.id]);
     const late=await post(`/api/nextech/orders/${created.body.id}/payment`,{result:'PAID'},{'X-Order-Token':created.accessToken});
@@ -114,5 +116,39 @@ test('NEXTECH orders persist in MySQL',{skip},async t=>{
     const count=Number(metrics.match(/^thuongmaidientu_orders_created_total (\d+)/m)?.[1]);
     const [[{n}]]=await pool.query('SELECT COUNT(*) AS n FROM nx_orders');
     assert.ok(count>0&&count<=n);
+  });
+
+  await t.test('admin adds a product with an uploaded image and customers can order it',async()=>{
+    const json={'Content-Type':'application/json'};
+    const create=body=>fetch(`${base}/api/admin/products`,{method:'POST',headers:{...json,Cookie:cookie},body:JSON.stringify(body)});
+    assert.equal((await fetch(`${base}/api/admin/products`,{method:'POST',headers:json,body:'{"name":"Không quyền","price":1,"stock":1}'})).status,401);
+    assert.equal((await create({name:'X',price:-1,stock:1})).status,400);
+    const created=await create({name:'Loa Bluetooth Mini',brand:'JBL',category:'Âm thanh',price:990000,stock:3});
+    assert.equal(created.status,201);
+    const product=await created.json(),sku=product.variants[0].sku;
+    assert.equal(product.imageIndex,null);
+
+    const png=Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4f30000000049454e44ae426082','hex');
+    const upload=(body,type)=>fetch(`${base}/api/admin/products/${sku}/image`,{method:'PUT',headers:{'Content-Type':type,Cookie:cookie},body});
+    assert.equal((await upload(Buffer.from('<svg></svg>'),'image/png')).status,415);
+    assert.equal((await upload(png,'image/svg+xml')).status,415);
+    const uploaded=await (await upload(png,'image/png')).json();
+    assert.match(uploaded.imageIndex,new RegExp(`^/api/nextech/products/${sku}/image\\?v=\\d+$`));
+    const image=await fetch(base+uploaded.imageIndex);
+    assert.equal(image.headers.get('content-type'),'image/png');
+    assert.deepEqual(Buffer.from(await image.arrayBuffer()),png);
+
+    const listed=await (await fetch(`${base}/api/nextech/products`)).json();
+    assert.ok(listed.some(p=>p.variants[0].sku===sku));
+    const ordered=await order(sku,2);
+    assert.equal(ordered.status,201);
+    assert.equal(ordered.body.subtotal,990000*2);
+    assert.equal((await order(sku,2)).status,409);
+
+    const hidden=await post(`/api/admin/products/${sku}`,{active:false,price:500000},{Cookie:cookie});
+    assert.equal(hidden.body.active,false);
+    assert.ok(!(await (await fetch(`${base}/api/nextech/products`)).json()).some(p=>p.variants[0].sku===sku));
+    assert.equal((await order(sku,1)).status,409);
+    assert.equal((await post(`/api/admin/products/${sku}`,{stock:1},{Cookie:cookie})).status,400);
   });
 });

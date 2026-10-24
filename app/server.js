@@ -120,6 +120,7 @@ function createApp(env = process.env) {
 
   app.use('/api/nextech', nextech.publicRouter);
   app.use('/api/admin/orders', adminRouter.requireAdmin, nextech.adminRouter);
+  app.use('/api/admin/products', adminRouter.requireAdmin, nextech.adminProductsRouter);
   app.use('/api/admin', adminRouter);
 
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: production ? '1h' : 0 }));

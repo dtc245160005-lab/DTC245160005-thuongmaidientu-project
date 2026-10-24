@@ -11,7 +11,7 @@ Website bán hàng trực tuyến có chức năng quản lý sản phẩm, gi�
 
 Giao diện NEXTECH hiện có trang chủ, chi tiết sản phẩm theo biến thể/SKU, giỏ hàng, thanh toán, danh sách và chi tiết đơn hàng, đăng nhập/đăng ký, hồ sơ/địa chỉ và các mục quản trị demo. Mã `NEX10` giảm 10% cho đơn demo.
 
-**Đơn hàng lưu trong MySQL.** Khi đặt hàng, trình duyệt chỉ gửi SKU, số lượng, địa chỉ và phương thức thanh toán tới `POST /api/nextech/orders` (`app/nextech-orders.cjs`). Máy chủ tự tính giá từ `commerce-data.mjs`, kiểm tra và giữ tồn kho trong bảng `nx_inventory` bằng giao dịch `SELECT … FOR UPDATE` (không bán vượt tồn kho khi nhiều người đặt cùng lúc), rồi lưu vào `nx_orders`, `nx_order_items` và `nx_order_events`. Đơn mới làm tăng `thuongmaidientu_orders_created_total` và `thuongmaidientu_revenue_vnd_total`, nên số liệu trên Grafana thay đổi theo. Hủy đơn, thanh toán giả lập và đổi trả đều được máy chủ kiểm tra trước. Khách hàng xác thực bằng mã bí mật của đơn (`X-Order-Token`, máy chủ chỉ lưu bản băm SHA-256). Các thao tác quản trị (`/api/admin/orders/...`) bắt buộc phải có cookie phiên quản trị. Đơn chờ thanh toán quá hạn được máy chủ hủy mỗi phút và trả lại tồn kho.
+**Đơn hàng lưu trong MySQL.** Khi đặt hàng, trình duyệt chỉ gửi SKU, số lượng, địa chỉ và phương thức thanh toán tới `POST /api/nextech/orders` (`app/nextech-orders.cjs`). Máy chủ tự tính giá từ bảng `nx_products`, kiểm tra và giữ tồn kho trong bảng `nx_inventory` bằng giao dịch `SELECT … FOR UPDATE` (không bán vượt tồn kho khi nhiều người đặt cùng lúc), rồi lưu vào `nx_orders`, `nx_order_items` và `nx_order_events`. Đơn mới làm tăng `thuongmaidientu_orders_created_total` và `thuongmaidientu_revenue_vnd_total`, nên số liệu trên Grafana thay đổi theo. Hủy đơn, thanh toán giả lập và đổi trả đều được máy chủ kiểm tra trước. Khách hàng xác thực bằng mã bí mật của đơn (`X-Order-Token`, máy chủ chỉ lưu bản băm SHA-256). Các thao tác quản trị (`/api/admin/orders/...`) bắt buộc phải có cookie phiên quản trị. Đơn chờ thanh toán quá hạn được máy chủ hủy mỗi phút và trả lại tồn kho.
 
 Sản phẩm, tài khoản khách, địa chỉ và mã khuyến mãi vẫn lưu trong LocalStorage của trình duyệt (`commerce-service.mjs`). Phiên đăng nhập khách nằm trong SessionStorage. Khi chạy local mà không có MySQL (không đặt `NODE_ENV=production`), đơn được lưu tạm trong trình duyệt và giao diện có thông báo. Trên production thì báo lỗi, không lưu tạm.
 
@@ -29,8 +29,13 @@ API Express/MySQL cũ (`/api/products`, `/api/cart`, `/api/orders`) vẫn nằm 
 
 ```bash
 docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < db/init/03-nextech.sql
+docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < db/init/04-nextech-products.sql
 docker compose up -d --build app
 ```
+
+**Thêm sản phẩm có ảnh.** Trong trang quản trị, mục "Sản phẩm & tồn kho", form "Thêm sản phẩm" cho phép chọn ảnh từ máy (PNG, JPEG, WebP, GIF, tối đa 2 MB). Sản phẩm được lưu vào bảng `nx_products`, ảnh lưu ngay trong MySQL (cột `MEDIUMBLOB`) và được phục vụ qua `/api/nextech/products/<SKU>/image`. Mọi trình duyệt đều thấy sản phẩm này và đặt mua được. Máy chủ kiểm tra cả loại tệp lẫn nội dung ảnh, nên không tải lên được tệp không phải ảnh. Giá, tồn kho, ảnh (nút "Đổi ảnh") và trạng thái ẩn/hiện được sửa trên máy chủ. Nút "Xóa" gỡ sản phẩm khỏi cửa hàng, còn đơn hàng cũ vẫn được giữ. Cửa hàng không còn sản phẩm mẫu cố định: mọi sản phẩm đều do quản trị thêm và bắt buộc có ảnh. Hai banner cạnh ảnh lớn ở trang chủ hiển thị sản phẩm có ảnh và còn hàng.
+
+**Đặt hàng cần đăng nhập.** Khách phải đăng nhập tài khoản khách hàng mới vào được trang thanh toán. Đây là kiểm tra phía giao diện, vì tài khoản khách vẫn lưu trong trình duyệt.
 
 **Kiểm thử.** `npm test` chạy logic giao diện và API (không cần MySQL). Muốn kiểm thử với MySQL thật, khởi tạo một MySQL tạm từ `db/init` rồi chạy `NX_TEST_DB_PORT=<cổng> npm test`. Tài khoản mặc định là `app`/`apppw`, có thể đổi bằng `NX_TEST_DB_USER` và `NX_TEST_DB_PASSWORD`.
 

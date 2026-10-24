@@ -21,6 +21,13 @@ const DB_UNAVAILABLE = new Set([
   'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'PROTOCOL_CONNECTION_LOST',
   'ER_ACCESS_DENIED_ERROR', 'ER_BAD_DB_ERROR', 'ER_NO_SUCH_TABLE'
 ]);
+const IMAGE_TYPES = {
+  'image/png': buf => buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  'image/jpeg': buf => buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff,
+  'image/webp': buf => buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP',
+  'image/gif': buf => buf.subarray(0, 4).toString('latin1') === 'GIF8'
+};
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const phonePattern = /^0\d{9,10}$/;
 
@@ -70,13 +77,56 @@ function toOrder(row, items = []) {
   };
 }
 
+// Sản phẩm do quản trị thêm, cùng dạng với catalog trong commerce-data.mjs.
+// imageIndex là URL ảnh tải lên (giao diện hiểu chuỗi là đường dẫn ảnh, số là vị trí trong ảnh ghép).
+function toProduct(row) {
+  return {
+    id: 1000 + row.id,
+    slug: row.slug,
+    name: row.name,
+    brand: row.brand,
+    category: row.category,
+    description: row.description,
+    warranty: 'Bảo hành chính hãng 12 tháng',
+    active: Boolean(row.active),
+    server: true,
+    imageIndex: row.has_image ? `/api/nextech/products/${row.sku}/image?v=${new Date(row.updated_at).getTime()}` : null,
+    reserved: row.reserved,
+    variants: [{
+      sku: row.sku, label: 'Tiêu chuẩn', price: Number(row.price), oldPrice: Number(row.old_price),
+      stock: row.on_hand, color: 'Đen'
+    }]
+  };
+}
+
 function makeNextechOrders({ pool, log, metrics, offlineFallback = false }) {
   let seeding = null;
+  let warnedNoProductsTable = false;
+
+  async function serverProducts({ includeHidden = false, sku = null } = {}, conn = pool) {
+    try {
+      const [rows] = await conn.query(`
+        SELECT p.id, p.sku, p.slug, p.name, p.brand, p.category, p.description, p.price, p.old_price,
+               p.active, p.image IS NOT NULL AS has_image, p.updated_at, i.on_hand, i.reserved
+        FROM nx_products p JOIN nx_inventory i ON i.sku = p.sku
+        WHERE (? OR p.active = 1) AND (? IS NULL OR p.sku = ?)
+        ORDER BY p.id
+      `, [includeHidden, sku, sku]);
+      return rows.map(toProduct);
+    } catch (error) {
+      // Chưa chạy 04-nextech-products.sql: vẫn bán được sản phẩm có sẵn.
+      if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
+      if (!warnedNoProductsTable) log('warn', 'nextech_products_table_missing', { hint: 'chạy db/init/04-nextech-products.sql' });
+      warnedNoProductsTable = true;
+      return [];
+    }
+  }
 
   // Tạo dòng tồn kho cho SKU mới trong catalog; không ghi đè số đã có.
   function ensureInventory() {
     seeding ??= shared.then(async ({ catalog }) => {
       const rows = catalog.flatMap(product => product.variants.map(variant => [variant.sku, variant.stock]));
+      if (!rows.length) return;
       await pool.query('INSERT IGNORE INTO nx_inventory (sku, on_hand) VALUES ?', [rows]);
     }).catch(error => { seeding = null; throw error; });
     return seeding;
@@ -203,7 +253,8 @@ function makeNextechOrders({ pool, log, metrics, offlineFallback = false }) {
 
         let price;
         try {
-          price = quote(lines, catalog, inventory, coupon, delivery, address.province);
+          const products = [...catalog, ...await serverProducts({ includeHidden: true }, conn)];
+          price = quote(lines, products, inventory, coupon, delivery, address.province);
         } catch (error) {
           throw new HttpError(409, error.message);
         }
@@ -356,12 +407,99 @@ function makeNextechOrders({ pool, log, metrics, offlineFallback = false }) {
     res.json(await runAction(customerActions, 'customer', req));
   }));
 
+  publicRouter.get('/products', handle(async (req, res) => {
+    res.json(await serverProducts());
+  }));
+  publicRouter.get('/products/:sku/image', handle(async (req, res) => {
+    const [[row]] = await pool.execute(
+      'SELECT image, image_type FROM nx_products WHERE sku = ? AND image IS NOT NULL',
+      [String(req.params.sku).slice(0, 32)]
+    );
+    if (!row) throw new HttpError(404, 'Không có ảnh.');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.type(row.image_type).send(row.image);
+  }));
+
   const adminRouter = express.Router();
   adminRouter.post('/:id/:action', handle(async (req, res) => {
     res.json(await runAction(adminActions, 'admin', req));
   }));
 
-  return { publicRouter, adminRouter, expirePending, ensureInventory };
+  const integer = (value, min, max) => {
+    const number = Number(value);
+    return value !== '' && Number.isSafeInteger(number) && number >= min && number <= max ? number : null;
+  };
+  const findProduct = async sku => {
+    const [product] = await serverProducts({ includeHidden: true, sku: String(sku).slice(0, 32) });
+    if (!product) throw new HttpError(404, 'Không tìm thấy sản phẩm.');
+    return product;
+  };
+
+  // Quản trị thêm sản phẩm, tải ảnh, sửa giá / tồn kho / ẩn hiện. Ảnh lưu trong MySQL (MEDIUMBLOB).
+  const adminProductsRouter = express.Router();
+  adminProductsRouter.get('/', handle(async (req, res) => {
+    res.json(await serverProducts({ includeHidden: true }));
+  }));
+  // Xóa sản phẩm khỏi cửa hàng. Dòng tồn kho được giữ lại vì đơn hàng cũ vẫn tham chiếu SKU.
+  adminProductsRouter.delete('/:sku', handle(async (req, res) => {
+    const { variants: [{ sku }] } = await findProduct(req.params.sku);
+    await pool.execute('DELETE FROM nx_products WHERE sku = ?', [sku]);
+    log('info', 'nextech_product_deleted', { sku });
+    res.json({ ok: true, sku });
+  }));
+  adminProductsRouter.post('/', handle(async (req, res) => {
+    const name = text(req.body?.name, 200);
+    const brand = text(req.body?.brand, 100) || 'NEXTECH';
+    const category = text(req.body?.category, 100) || 'Phụ kiện';
+    const description = text(req.body?.description, 1000);
+    const price = integer(req.body?.price, 0, 99999999999);
+    const stock = integer(req.body?.stock, 0, 100000);
+    if (name.length < 3 || price === null || stock === null) throw new HttpError(400, 'Dữ liệu sản phẩm không hợp lệ.');
+    const sku = `NXU-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    await transaction(async conn => {
+      await conn.execute('INSERT INTO nx_inventory (sku, on_hand) VALUES (?, ?)', [sku, stock]);
+      await conn.execute(`
+        INSERT INTO nx_products (sku, slug, name, brand, category, description, price, old_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [sku, `sp-${sku.toLowerCase()}`, name, brand, category, description, price, price]);
+    });
+    log('info', 'nextech_product_created', { sku, price, stock });
+    res.status(201).json(await findProduct(sku));
+  }));
+  adminProductsRouter.put('/:sku/image', express.raw({ type: () => true, limit: MAX_IMAGE_BYTES }), handle(async (req, res) => {
+    const type = String(req.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!IMAGE_TYPES[type] || body.length < 12 || !IMAGE_TYPES[type](body)) {
+      throw new HttpError(415, 'Chỉ nhận ảnh PNG, JPEG, WebP hoặc GIF.');
+    }
+    const { variants: [{ sku }] } = await findProduct(req.params.sku);
+    await pool.execute('UPDATE nx_products SET image = ?, image_type = ? WHERE sku = ?', [body, type, sku]);
+    log('info', 'nextech_product_image', { sku, bytes: body.length });
+    res.json(await findProduct(sku));
+  }));
+  adminProductsRouter.post('/:sku', handle(async (req, res) => {
+    const { variants: [{ sku }] } = await findProduct(req.params.sku);
+    await transaction(async conn => {
+      const [[stock]] = await conn.execute('SELECT reserved FROM nx_inventory WHERE sku = ? FOR UPDATE', [sku]);
+      if (req.body?.price !== undefined) {
+        const price = integer(req.body.price, 0, 99999999999);
+        if (price === null) throw new HttpError(400, 'Giá không hợp lệ.');
+        await conn.execute('UPDATE nx_products SET price = ? WHERE sku = ?', [price, sku]);
+      }
+      if (req.body?.stock !== undefined) {
+        const onHand = integer(req.body.stock, 0, 100000);
+        if (onHand === null || onHand < stock.reserved) throw new HttpError(400, 'Tồn kho không hợp lệ hoặc thấp hơn số đã giữ.');
+        await conn.execute('UPDATE nx_inventory SET on_hand = ? WHERE sku = ?', [onHand, sku]);
+      }
+      if (req.body?.active !== undefined) {
+        await conn.execute('UPDATE nx_products SET active = ? WHERE sku = ?', [req.body.active ? 1 : 0, sku]);
+      }
+    });
+    log('info', 'nextech_product_updated', { sku });
+    res.json(await findProduct(sku));
+  }));
+
+  return { publicRouter, adminRouter, adminProductsRouter, expirePending, ensureInventory };
 }
 
 module.exports = { makeNextechOrders, HttpError };

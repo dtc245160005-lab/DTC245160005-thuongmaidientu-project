@@ -7,8 +7,8 @@ const key='nx_commerce_v1';
 const demoCustomer={email:'demo@nextech.vn',password:'Nextech@2026',name:'Demo NEXTECH'};
 const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const phonePattern=/^0\d{9,10}$/;
-const newData=()=>({
-  products:clone(catalog),inventory:Object.fromEntries(catalog.flatMap(p=>p.variants.map(v=>[v.sku,{onHand:v.stock,reserved:0}]))),
+const newData=(base=catalog)=>({
+  products:clone(base),inventory:Object.fromEntries(base.flatMap(p=>p.variants.map(v=>[v.sku,{onHand:v.stock,reserved:0}]))),
   carts:{},orders:[],users:[],coupons:clone(seededCoupons),audit:[],guestId:uid()
 });
 const hash=async(salt,password)=>{
@@ -17,10 +17,15 @@ const hash=async(salt,password)=>{
 };
 
 export class DemoCommerceService {
-  constructor(storage=localStorage,sessionStorageApi=sessionStorage){
+  constructor(storage=localStorage,sessionStorageApi=sessionStorage,{catalog:base=catalog}={}){
     this.storage=storage;
     this.sessionStorage=sessionStorageApi;
-    try{this.data=JSON.parse(storage.getItem(key))||newData();}catch{this.data=newData();}
+    this.base=base;
+    try{this.data=JSON.parse(storage.getItem(key))||newData(base);}catch{this.data=newData(base);}
+    // Bỏ sản phẩm mẫu cũ còn lưu trong trình duyệt; chỉ giữ sản phẩm từ máy chủ hoặc thêm khi chạy không có MySQL.
+    const before=this.data.products.length;
+    this.data.products=this.data.products.filter(p=>p.server||p.local||base.some(item=>item.id===p.id));
+    if(this.data.products.length!==before){this.pruneCarts();this.save();}
     try{this.session=JSON.parse(sessionStorageApi.getItem('nx_commerce_session'))||null;}catch{this.session=null;}
     if(!storage.getItem(key)){
       // Keep the cart created by the first NEXTECH preview.
@@ -229,7 +234,31 @@ export class DemoCommerceService {
   }
   adjustStock(sku,value){this.requireAdmin();const entry=this.data.inventory[sku];if(!entry||!Number.isInteger(Number(value))||Number(value)<entry.reserved)throw new Error('Tồn kho không hợp lệ hoặc thấp hơn số đã giữ.');entry.onHand=Number(value);this.audit('STOCK_ADJUST',sku,String(value));this.save();}
   setProduct(sku,{price,active}){this.requireAdmin();const found=this.bySku(sku);if(!found)throw new Error('Không tìm thấy SKU.');if(price!==undefined){if(!Number.isSafeInteger(Number(price))||Number(price)<0)throw new Error('Giá không hợp lệ.');found.variant.price=Number(price);}if(active!==undefined)found.product.active=!!active;this.audit('PRODUCT_UPDATE',sku);this.save();}
-  addProduct(input){this.requireAdmin();const name=String(input.name||'').trim(),price=Number(input.price),stock=Number(input.stock);if(name.length<3||!Number.isSafeInteger(price)||price<0||!Number.isInteger(stock)||stock<0)throw new Error('Dữ liệu sản phẩm không hợp lệ.');const id=Math.max(...this.data.products.map(p=>p.id))+1,sku=`NX-${String(id).padStart(3,'0')}-STD`,slug=`san-pham-${id}`;this.data.products.push({id,slug,name,brand:String(input.brand||'NEXTECH'),category:String(input.category||'Phụ kiện'),description:String(input.description||''),variants:[{sku,label:'Tiêu chuẩn',price,oldPrice:price,stock,color:'Đen'}],imageIndex:0,warranty:'Bảo hành 12 tháng',active:true});this.data.inventory[sku]={onHand:stock,reserved:0};this.audit('PRODUCT_CREATE',sku);this.save();}
+  // Sản phẩm quản trị thêm trên máy chủ (MySQL): thay bản cũ cùng SKU, tồn kho theo số máy chủ.
+  mergeServerProducts(list){
+    const seen=new Set();
+    for(const incoming of list){
+      const sku=incoming.variants[0].sku,{reserved,...product}=incoming;seen.add(sku);
+      const index=this.data.products.findIndex(p=>p.variants.some(v=>v.sku===sku));
+      if(index>=0)this.data.products[index]=product;else this.data.products.push(product);
+      this.data.inventory[sku]={onHand:product.variants[0].stock,reserved};
+    }
+    return seen;
+  }
+  // Danh sách từ máy chủ là đầy đủ: sản phẩm máy chủ không còn trong danh sách là đã bị xóa (hoặc bị ẩn với khách).
+  syncServerProducts(list){
+    const seen=this.mergeServerProducts(list);
+    this.data.products=this.data.products.filter(p=>!p.server||seen.has(p.variants[0].sku));
+    this.pruneCarts();this.save();
+  }
+  removeServerProduct(sku){
+    this.data.products=this.data.products.filter(p=>!(p.server&&p.variants[0].sku===sku));
+    this.pruneCarts();this.save();
+  }
+  pruneCarts(){
+    for(const [owner,lines] of Object.entries(this.data.carts))this.data.carts[owner]=lines.filter(line=>this.bySku(line.sku));
+  }
+  addProduct(input){this.requireAdmin();const name=String(input.name||'').trim(),price=Number(input.price),stock=Number(input.stock);if(name.length<3||!Number.isSafeInteger(price)||price<0||!Number.isInteger(stock)||stock<0)throw new Error('Dữ liệu sản phẩm không hợp lệ.');const id=Math.max(0,...this.data.products.map(p=>p.id))+1,sku=`NX-${String(id).padStart(3,'0')}-STD`,slug=`san-pham-${id}`;this.data.products.push({id,slug,name,brand:String(input.brand||'NEXTECH'),category:String(input.category||'Phụ kiện'),description:String(input.description||''),variants:[{sku,label:'Tiêu chuẩn',price,oldPrice:price,stock,color:'Đen'}],imageIndex:null,warranty:'Bảo hành 12 tháng',active:true,local:true});this.data.inventory[sku]={onHand:stock,reserved:0};this.audit('PRODUCT_CREATE',sku);this.save();}
   setCustomerLock(email,locked){this.requireAdmin();const user=this.data.users.find(u=>u.email===email);if(!user)throw new Error('Không tìm thấy khách hàng.');user.locked=!!locked;this.audit('CUSTOMER_LOCK',email,String(locked));this.save();}
   setCoupon(code,active){this.requireAdmin();const coupon=this.data.coupons.find(c=>c.code===code);if(!coupon)throw new Error('Không tìm thấy mã.');coupon.active=!!active;this.audit('COUPON_UPDATE',code,String(active));this.save();}
   metrics(){this.requireAdmin();const orders=this.data.orders;return{revenue:orders.filter(o=>o.paymentStatus==='PAID').reduce((sum,o)=>sum+o.total,0),newOrders:orders.filter(o=>o.status==='PENDING_CONFIRMATION').length,processing:orders.filter(o=>['CONFIRMED','PREPARING'].includes(o.status)).length,shipping:orders.filter(o=>o.status==='SHIPPING').length,completed:orders.filter(o=>o.status==='COMPLETED').length,cancelled:orders.filter(o=>o.status==='CANCELLED').length,customers:this.data.users.length};}

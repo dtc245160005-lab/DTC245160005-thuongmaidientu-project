@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DemoCommerceService} from '../public/commerce-service.mjs';
 import {quote,canTransition} from '../public/commerce-core.mjs';
+import {catalog} from './fixtures/catalog.mjs';
 
 class MemoryStorage{data=new Map();getItem(key){return this.data.get(key)??null;}setItem(key,value){this.data.set(key,String(value));}removeItem(key){this.data.delete(key);}}
 const address={name:'Nguyễn Văn A',phone:'0912345678',email:'a@example.com',province:'Hà Nội',ward:'Dịch Vọng',detail:'Số 12 đường Xuân Thủy'};
-const make=()=>new DemoCommerceService(new MemoryStorage(),new MemoryStorage());
+const make=()=>new DemoCommerceService(new MemoryStorage(),new MemoryStorage(),{catalog});
 
 test('quote validates combined quantity for duplicate SKU',()=>{
   const service=make(),sku=service.products()[0].variants[0].sku;
@@ -76,9 +77,9 @@ test('variants have separate cart lines and repeat add combines one SKU',()=>{
   assert.throws(()=>service.changeQty(first.sku,100),/tồn kho/);
 });
 test('cart persists on reload but does not reserve inventory',()=>{
-  const storage=new MemoryStorage(),session=new MemoryStorage(),first=new DemoCommerceService(storage,session),sku=first.products()[0].variants[0].sku,start=first.available(sku);
+  const storage=new MemoryStorage(),session=new MemoryStorage(),first=new DemoCommerceService(storage,session,{catalog}),sku=first.products()[0].variants[0].sku,start=first.available(sku);
   first.addCart(sku,2);
-  const next=new DemoCommerceService(storage,session);
+  const next=new DemoCommerceService(storage,session,{catalog});
   assert.equal(next.cartCount(),2);
   assert.equal(next.available(sku),start);
 });
