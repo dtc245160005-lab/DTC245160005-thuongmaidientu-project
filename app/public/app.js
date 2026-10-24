@@ -1,264 +1,73 @@
 'use strict';
 
-const $ = selector => document.querySelector(selector);
-const money = value => Number(value).toLocaleString('vi-VN') + ' ₫';
+// NEXTECH demo: dữ liệu mua sắm nằm trong trình duyệt, không phải API sản xuất.
+const products = [
+  ['MacBook Air 13 inch M3','Apple','Laptop',25990000,28990000,12,'16GB · 256GB · Midnight'],
+  ['MacBook Pro 14 inch M3 Pro','Apple','Laptop',42990000,46990000,7,'18GB · 512GB · Space Black'],
+  ['iPhone 16 Pro Max 256GB','Apple','Điện thoại',33990000,36990000,9,'Titan tự nhiên · 256GB'],
+  ['Samsung Galaxy S Series','Samsung','Điện thoại',19990000,22990000,15,'Tím · 256GB'],
+  ['iPad Air M2 11 inch','Apple','Tablet',15990000,17990000,11,'Wi-Fi · 128GB'],
+  ['Apple Watch Series 10 GPS','Apple','Phụ kiện',9790000,10990000,8,'42mm · Đen bóng'],
+  ['Sony WH-1000XM5 Chống ồn','Sony','Âm thanh',7490000,8990000,5,'Đen · Bluetooth'],
+  ['AirPods Pro thế hệ 2','Apple','Âm thanh',5290000,6490000,17,'USB-C · Trắng'],
+  ['Samsung Galaxy Buds3 Pro','Samsung','Âm thanh',4290000,5490000,19,'Graphite · Bluetooth'],
+  ['Bàn phím cơ RGB Pro','Keychron','Gaming',2190000,2790000,6,'Mechanical · RGB'],
+  ['Chuột gaming không dây','Logitech','Gaming',1590000,1990000,22,'Wireless · Black'],
+  ['Tay cầm chơi game DualSense','Sony','Gaming',1790000,2190000,14,'Wireless · Midnight']
+].map((v,i)=>({id:i+1,name:v[0],brand:v[1],category:v[2],price:v[3],old:v[4],stock:v[5],variant:v[6]}));
+const categories = ['Laptop','Điện thoại','Tablet','Phụ kiện','Gaming','Âm thanh'];
+const DEMO_ACCOUNT = Object.freeze({ email: 'demo@nextech.vn', password: 'Nextech@2026', name: 'Demo NEXTECH' });
+const categoryImages = [1,3,5,6,12,7];
+const statusLabels = {pending:'Chờ xác nhận',shipping:'Đang giao',completed:'Hoàn thành',cancelled:'Đã hủy'};
+const initialOrders = [
+  {id:'NT2026101801',date:'2026-10-18T09:42:00',status:'shipping',items:[{id:3,qty:1}],total:33990000,customer:'Khách hàng NEXTECH'},
+  {id:'NT2026101202',date:'2026-10-12T14:16:00',status:'completed',items:[{id:7,qty:1}],total:7490000,customer:'Khách hàng NEXTECH'},
+  {id:'NT2026100403',date:'2026-10-04T11:03:00',status:'pending',items:[{id:6,qty:1}],total:9790000,customer:'Khách hàng NEXTECH'}
+];
+const store = (key,value) => localStorage.setItem('nx_'+key,JSON.stringify(value));
+const load = (key,fallback) => { try { return JSON.parse(localStorage.getItem('nx_'+key)) ?? fallback; } catch { return fallback; } };
+const state = {cart:load('cart',[]),orders:load('orders',initialOrders),favorites:load('favorites',[]),account:load('account',null),selected:[],coupon:'',category:'',query:'',orderFilter:'all',orderQuery:'',slide:0,modal:null,menu:false,adminSection:'Tổng quan',range:'7 ngày'};
+state.selected = state.cart.map(x=>x.id);
+const p = id => products.find(x=>x.id===Number(id));
+const cash = n => new Intl.NumberFormat('vi-VN').format(n)+'₫';
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icons = {bolt:'M13 2 4 13h7l-1 9 10-12h-7l1-8Z',search:'M21 21l-5-5 M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z',user:'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 21a8 8 0 0 1 16 0',heart:'M20.8 4.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z',bag:'M4 8h16l-1 13H5L4 8Zm5 0V6a3 3 0 0 1 6 0v2',menu:'M4 6h16M4 12h16M4 18h16',arrow:'M5 12h14m-6-6 6 6-6 6',chevron:'m9 18 6-6-6-6',truck:'M2 5h12v11H2zM14 9h4l4 4v3h-8zM8 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm12 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',shield:'m12 2 9 4v5c0 5-3.5 8.5-9 11-5.5-2.5-9-6-9-11V6l9-4Zm-3 10 2 2 4-4',headset:'M3 13v-2a9 9 0 0 1 18 0v2M3 13h3v7H3zm15 0h3v7h-3z',check:'m5 12 4 4L19 6',close:'M5 5l14 14M19 5 5 19',plus:'M12 5v14M5 12h14',minus:'M5 12h14',trash:'M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6',chart:'M3 3v18h18M7 15l4-4 3 2 5-7',box:'m12 2 9 5-9 5-9-5 9-5ZM3 7v10l9 5 9-5V7M12 12v10',users:'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM2 20a7 7 0 0 1 14 0M17 5a3 3 0 0 1 0 6m0 3a6 6 0 0 1 5 6',bell:'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4',filter:'M3 5h18l-7 8v6l-4 2v-8L3 5Z',calendar:'M3 5h18v16H3zM7 3v4m10-4v4M3 10h18',eye:'M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6Zm12 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',gift:'M3 9h18v12H3zM3 13h18M12 9v12M12 9C7 9 6 3 9 3c2 0 3 3 3 6Zm0 0c5 0 6-6 3-6-2 0-3 3-3 6Z',settings:'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z'};
+const ico = (name,size=19) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icons[name]||icons.bolt}"/></svg>`;
+const img = (id,cls='') => { const i=Number(id)-1; return `<div class="product-image ${cls}" role="img" aria-label="${esc(p(id)?.name||'Sản phẩm')}" style="background-position:${i%4*100/3}% ${Math.floor(i/4)*50}%"></div>`; };
+const count = () => state.cart.reduce((n,x)=>n+x.qty,0);
+const notice = msg => { const t=document.querySelector('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(notice.timer); notice.timer=setTimeout(()=>t.classList.remove('show'),3300); };
+const persist = () => {store('cart',state.cart);store('orders',state.orders);store('favorites',state.favorites);};
+const navTo = (url,scroll=true) => {if(location.pathname+location.search!==url)history.pushState({},'',url);state.menu=false;state.modal=null;render();if(scroll)window.scrollTo({top:0,behavior:'smooth'});};
+const logo = () => `<a href="/" data-link class="logo"><span class="logo-icon">${ico('bolt',18)}</span>NEX<span>TECH</span></a>`;
+const btn = (label,action,extra='') => `<button type="button" class="btn btn-primary" data-action="${action}" ${extra}>${label}</button>`;
 
-function esc(value) {
-  return String(value ?? '').replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  })[char]);
-}
-
-function uuid() {
-  if (window.crypto && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
-    const random = Math.random() * 16 | 0;
-    return (char === 'x' ? random : (random & 3 | 8)).toString(16);
-  });
-}
-
-function cartToken() {
-  let token = localStorage.getItem('cartToken');
-  if (!token) {
-    token = uuid();
-    localStorage.setItem('cartToken', token);
-  }
-  return token;
-}
-
-const TOKEN = cartToken();
-
-async function api(url, options = {}) {
-  const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  });
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data.error || 'Có lỗi xảy ra');
-  }
-  return data;
-}
-
-function toast(message) {
-  const element = $('#toast');
-  element.textContent = message;
-  element.classList.remove('hidden');
-  setTimeout(() => element.classList.add('hidden'), 2500);
-}
-
-async function loadCategories() {
-  const categories = await api('/api/categories');
-
-  for (const category of categories) {
-    const option = document.createElement('option');
-    option.value = category.id;
-    option.textContent = category.name;
-    $('#category').append(option);
-  }
-}
-
-async function loadProducts() {
-  const params = new URLSearchParams();
-  if ($('#category').value) {
-    params.set('category', $('#category').value);
-  }
-  if ($('#search').value.trim()) {
-    params.set('q', $('#search').value.trim());
-  }
-
-  const products = await api('/api/products?' + params.toString());
-  $('#product-list').innerHTML = products.map(product => `
-    <div class="card product">
-      <div class="emoji">${esc(product.emoji)}</div>
-      <h3>${esc(product.name)}</h3>
-      <p class="muted">${esc(product.category)}</p>
-      <p>${esc(product.description)}</p>
-      <p class="price">${money(product.price)}</p>
-      <p class="muted">Còn ${Number(product.stock)} sản phẩm</p>
-      <button type="button" class="primary add"
-              data-id="${Number(product.id)}"
-              ${product.stock < 1 ? 'disabled' : ''}>
-        Thêm vào giỏ
-      </button>
-    </div>
-  `).join('') || '<p>Không có sản phẩm phù hợp.</p>';
-}
-
-function renderCart(cart) {
-  $('#cart-count').textContent = cart.items.reduce(
-    (sum, item) => sum + Number(item.quantity), 0
-  );
-  $('#cart-total').textContent = money(cart.total);
-
-  $('#cart-items').innerHTML = cart.items.length
-    ? cart.items.map(item => `
-      <div class="cart-row">
-        <span>${esc(item.emoji)}</span>
-        <span class="name">
-          ${esc(item.name)}<br>
-          <span class="muted">${money(item.price)}</span>
-        </span>
-        <span class="qty">
-          <button type="button" data-act="dec"
-                  data-id="${Number(item.product_id)}"
-                  data-q="${Number(item.quantity)}">−</button>
-          ${Number(item.quantity)}
-          <button type="button" data-act="inc"
-                  data-id="${Number(item.product_id)}"
-                  data-q="${Number(item.quantity)}">+</button>
-        </span>
-        <strong>${money(item.subtotal)}</strong>
-        <button type="button" data-act="del"
-                data-id="${Number(item.product_id)}">Xóa</button>
-      </div>
-    `).join('')
-    : '<p>Giỏ hàng đang trống.</p>';
-}
-
-async function refreshCart() {
-  renderCart(await api(`/api/cart/${TOKEN}`));
-}
-
-async function loadOrders() {
-  const orders = await api(`/api/orders?cartToken=${TOKEN}`);
-
-  $('#order-list').innerHTML = orders.length
-    ? orders.map(order => `
-      <div class="card order">
-        <strong>Đơn #${Number(order.id)}</strong>
-        <span class="badge">${esc(order.status)}</span>
-        <p class="muted">
-          ${new Date(order.created_at).toLocaleString('vi-VN')} –
-          ${esc(order.customer_name)}, ${esc(order.phone)}
-        </p>
-        <p class="muted">${esc(order.address)}</p>
-        <ul>
-          ${order.items.map(item => `
-            <li>${esc(item.product_name)} × ${Number(item.quantity)}</li>
-          `).join('')}
-        </ul>
-        <p class="price">${money(order.total)}</p>
-      </div>
-    `).join('')
-    : '<p>Bạn chưa có đơn hàng nào.</p>';
-}
-
-document.querySelectorAll('.tab').forEach(button => {
-  button.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.classList.toggle('active', tab === button);
-    });
-    document.querySelectorAll('.view').forEach(view => {
-      view.classList.add('hidden');
-    });
-
-    $('#view-' + button.dataset.view).classList.remove('hidden');
-
-    if (button.dataset.view === 'cart') {
-      refreshCart().catch(error => toast(error.message));
-    }
-    if (button.dataset.view === 'orders') {
-      loadOrders().catch(error => toast(error.message));
-    }
-  });
-});
-
-$('#category').addEventListener('change', () => {
-  loadProducts().catch(error => toast(error.message));
-});
-
-let searchTimer;
-$('#search').addEventListener('input', () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    loadProducts().catch(error => toast(error.message));
-  }, 300);
-});
-
-$('#product-list').addEventListener('click', async event => {
-  const button = event.target.closest('button.add');
-  if (!button) return;
-
-  try {
-    renderCart(await api(`/api/cart/${TOKEN}/items`, {
-      method: 'POST',
-      body: JSON.stringify({
-        productId: Number(button.dataset.id),
-        quantity: 1
-      })
-    }));
-    toast('Đã thêm vào giỏ hàng');
-  } catch (error) {
-    toast(error.message);
-  }
-});
-
-$('#cart-items').addEventListener('click', async event => {
-  const button = event.target.closest('button[data-act]');
-  if (!button) return;
-
-  const id = Number(button.dataset.id);
-  const currentQuantity = Number(button.dataset.q || 0);
-
-  try {
-    if (button.dataset.act === 'del') {
-      renderCart(await api(`/api/cart/${TOKEN}/items/${id}`, {
-        method: 'DELETE'
-      }));
-    } else {
-      const quantity = button.dataset.act === 'inc'
-        ? currentQuantity + 1
-        : currentQuantity - 1;
-
-      renderCart(await api(`/api/cart/${TOKEN}/items/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ quantity })
-      }));
-    }
-  } catch (error) {
-    toast(error.message);
-  }
-});
-
-$('#checkout-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const form = new FormData(event.target);
-
-  try {
-    const order = await api('/api/orders', {
-      method: 'POST',
-      body: JSON.stringify({
-        cartToken: TOKEN,
-        customerName: form.get('customerName'),
-        phone: form.get('phone'),
-        address: form.get('address')
-      })
-    });
-
-    toast(`Đặt hàng thành công! Mã đơn #${order.orderId}`);
-    event.target.reset();
-    await refreshCart();
-    await loadProducts();
-  } catch (error) {
-    toast(error.message);
-  }
-});
-
-(async () => {
-  try {
-    await loadCategories();
-    await loadProducts();
-    await refreshCart();
-  } catch (error) {
-    toast(error.message);
-  }
-})();
+function header(){return `<header class="site-header"><div class="utility"><div class="container utility-inner"><span>${ico('bolt',13)} Siêu sale công nghệ · Giảm đến 30% hôm nay</span><span>Hỗ trợ 24/7 · Hotline 1900 8888</span></div></div><div class="container main-header">${logo()}<form id="search-form" class="header-search"><label class="sr-only" for="search-input">Tìm sản phẩm</label><input id="search-input" name="query" placeholder="Tìm laptop, điện thoại, phụ kiện..." value="${esc(state.query)}"><button aria-label="Tìm kiếm">${ico('search')}</button></form><div class="header-actions"><a href="/login" data-link class="header-action">${ico('user')}<span><small>Tài khoản</small><b>${esc(state.account?.name?.split(' ')[0]||'Đăng nhập')}</b></span></a>${state.account?`<button class="header-action signout" data-action="logout" aria-label="Đăng xuất">Đăng xuất</button>`:''}<button data-action="favorites" class="header-action">${ico('heart')}<span><small>Yêu thích</small><b>${state.favorites.length} sản phẩm</b></span></button><a href="/cart" data-link class="header-action">${ico('bag')}<span><small>Giỏ hàng</small><b>${count()} sản phẩm</b></span><em>${count()}</em></a><button class="mobile-menu" data-action="menu" aria-label="Mở menu">${ico('menu')}</button></div></div><div class="nav-wrap"><nav class="container nav ${state.menu?'open':''}" aria-label="Điều hướng"><button class="nav-category" data-action="categories">${ico('menu',17)} Danh mục sản phẩm</button><a href="/" data-link>Trang chủ</a><button data-action="category" data-value="Laptop">Sản phẩm nổi bật</button><button data-action="shop">Khuyến mãi <i class="hot">HOT</i></button><a href="/orders" data-link>Đơn hàng</a><a href="/admin" data-link>Quản trị demo</a><a href="/cart" data-link class="nav-offer">${ico('gift',17)} Ưu đãi của bạn ${ico('arrow',15)}</a></nav></div></header>`;}
+function footer(){return `<footer class="footer"><div class="container footer-grid"><div>${logo()}<p>Công nghệ chính hãng, trải nghiệm mua sắm tinh gọn và đáng tin cậy.</p></div><div><h4>Về NEXTECH</h4><a href="/" data-link>Trang chủ</a><a href="/admin" data-link>Quản trị demo</a></div><div><h4>Hỗ trợ khách hàng</h4><a href="/orders" data-link>Tra cứu đơn hàng</a><button data-action="info" data-msg="Đổi trả trong 30 ngày cho đơn hàng hợp lệ.">Chính sách đổi trả</button><button data-action="info" data-msg="Miễn phí giao hàng từ 2 triệu đồng.">Chính sách giao hàng</button></div><div><h4>Liên hệ</h4><p>1900 8888 · 08:00–22:00</p><p>support@nextech.demo</p><p>Hà Nội, Việt Nam</p></div></div><div class="container footer-bottom"><span>© 2026 NEXTECH · Giao diện và giao dịch minh họa</span><span>Visa · Mastercard · Chuyển khoản</span></div></footer>`;}
+function card(x){return `<article class="product-card"><div class="product-photo">${img(x.id)}<span class="sale-label">-${Math.round((1-x.price/x.old)*100)}%</span><button class="favorite ${state.favorites.includes(x.id)?'active':''}" data-action="favorite" data-id="${x.id}" aria-label="Yêu thích ${esc(x.name)}">${ico('heart',17)}</button></div><div class="product-meta">${esc(x.brand)} <span>★ 4.9</span></div><h3>${esc(x.name)}</h3><p>${esc(x.variant)}</p><div class="prices"><strong>${cash(x.price)}</strong><del>${cash(x.old)}</del></div><button class="btn btn-primary add-btn" data-action="add" data-id="${x.id}">${ico('bag',16)} Thêm vào giỏ</button></article>`;}
+function home(){const slides=[['MacBook Air M3 · 2026','Sức mạnh<br>Kiến tạo tương lai','Hiệu năng bứt phá, thiết kế tinh tế và sức sáng tạo không giới hạn.'],['Bộ sưu tập công nghệ','Chạm đến<br>Điều khác biệt','Khám phá những thiết bị giúp mỗi ý tưởng trở nên xuất sắc.'],['NEXTECH Selection','Nâng cấp hôm nay<br>Bứt phá ngày mai','Lựa chọn công nghệ chính hãng với trải nghiệm mua sắm xứng tầm.']];const s=slides[state.slide];const list=products.filter(x=>(!state.category||x.category===state.category)&&(!state.query||`${x.name} ${x.brand} ${x.category}`.toLowerCase().includes(state.query.toLowerCase())));return `${header()}<main class="container home"><section class="hero-grid"><div class="hero-main"><div class="hero-copy"><span class="eyebrow light">${ico('bolt',15)} ${s[0]}</span><h1>${s[1]}</h1><p>${s[2]}</p><div class="hero-buttons">${btn('Mua ngay '+ico('arrow',17),'shop')}<button class="btn btn-outline-light" data-action="category" data-value="Laptop">Tìm hiểu thêm</button></div><div class="hero-points"><span>${ico('shield',16)} Chính hãng 100%</span><span>${ico('truck',17)} Miễn phí vận chuyển</span></div></div><div class="hero-dots">${slides.map((_,i)=>`<button data-action="slide" data-id="${i}" class="${i===state.slide?'active':''}" aria-label="Banner ${i+1}"></button>`).join('')}</div></div><div class="hero-side"><div class="side-banner headphones"><span class="eyebrow">TAI NGHE CAO CẤP</span><h2>Âm thanh đỉnh cao<br>Trong từng khoảnh khắc</h2><p>Sony WH-1000XM5</p><button data-action="add" data-id="7">Khám phá ngay ${ico('arrow',15)}</button>${img(7)}</div><div class="side-banner watch"><span class="eyebrow">ĐỒNG HỒ THÔNG MINH</span><h2>Sống khỏe mỗi ngày<br>Cùng công nghệ đỉnh cao</h2><button data-action="add" data-id="6">Xem sản phẩm ${ico('arrow',15)}</button>${img(6)}</div></div></section><div class="benefits"><div>${ico('truck')}<span><b>Giao hàng toàn quốc</b><small>Miễn phí đơn từ 2 triệu</small></span></div><div>${ico('shield')}<span><b>Sản phẩm chính hãng</b><small>Cam kết nguồn gốc</small></span></div><div>${ico('check')}<span><b>Đổi trả linh hoạt</b><small>Đổi trả trong 30 ngày</small></span></div><div>${ico('headset')}<span><b>Hỗ trợ 24/7</b><small>Tư vấn tận tình</small></span></div></div><section class="section"><div class="section-title"><div><span class="eyebrow">KHÁM PHÁ THẾ GIỚI CÔNG NGHỆ</span><h2>Danh mục nổi bật</h2></div><button class="text-link" data-action="clear">Xem tất cả ${ico('arrow',16)}</button></div><div class="category-grid">${categories.map((c,i)=>`<button class="category-card ${state.category===c?'active':''}" data-action="category" data-value="${c}">${img(categoryImages[i])}<b>${c}</b>${ico('chevron',16)}</button>`).join('')}</div></section><section class="section" id="products"><div class="section-title"><div><span class="eyebrow">SẢN PHẨM ĐƯỢC YÊU THÍCH</span><h2>${state.category||'Sản phẩm nổi bật'}</h2><p>${state.query?'Tìm kiếm “'+esc(state.query)+'” · ':''}${list.length} sản phẩm</p></div><div class="filter-pills"><button data-action="clear" class="${!state.category?'active':''}">Tất cả</button>${categories.slice(0,4).map(c=>`<button data-action="category" data-value="${c}" class="${state.category===c?'active':''}">${c}</button>`).join('')}</div></div>${list.length?`<div class="product-grid">${list.map(card).join('')}</div>`:`<div class="empty">${ico('search',36)}<h3>Chưa tìm thấy sản phẩm</h3><p>Thử từ khóa khác nhé.</p>${btn('Xem tất cả','clear')}</div>`}</section><section class="newsletter"><div><span class="eyebrow light">ĐẶC QUYỀN NEXTECH</span><h2>Đăng ký nhận tin công nghệ</h2><p>Cập nhật ưu đãi và sản phẩm mới mỗi tuần.</p></div><form id="newsletter"><label class="sr-only" for="news-email">Email</label><input id="news-email" type="email" placeholder="Nhập email của bạn" required><button class="btn btn-primary">Đăng ký ngay ${ico('arrow',16)}</button></form></section></main>${footer()}`;}
+function auth(type){const reg=type==='register';return `<main class="auth-layout"><div class="auth-left"><div class="auth-inner">${logo()}<div class="auth-heading"><span class="eyebrow">${reg?'TRỞ THÀNH THÀNH VIÊN':'CHÀO MỪNG TRỞ LẠI'}</span><h1>${reg?'Tạo tài khoản mới':'Chào mừng bạn trở lại!'}</h1><p>${reg?'Gia nhập NEXTECH để nhận ưu đãi dành riêng cho bạn.':'Đăng nhập để tiếp tục hành trình công nghệ của bạn.'}</p></div><form id="${reg?'register':'login'}-form" class="auth-form" novalidate>${reg?'<label>Họ và tên<input name="name" autocomplete="name" placeholder="Nguyễn Văn A" required></label>':''}<label>Email${reg?'':' hoặc số điện thoại'}<input name="email" autocomplete="${reg?'email':'username'}" placeholder="ban@email.com" required></label>${reg?'<label>Số điện thoại<input name="phone" autocomplete="tel" placeholder="0912 345 678" required></label>':''}<label>Mật khẩu<div class="password-wrap"><input name="password" type="password" autocomplete="${reg?'new-password':'current-password'}" placeholder="${reg?'Ít nhất 8 ký tự':'Nhập mật khẩu'}" required><button type="button" data-action="toggle-pass" aria-label="Hiện mật khẩu">${ico('eye',17)}</button></div></label>${reg?'<label>Xác nhận mật khẩu<div class="password-wrap"><input name="confirm" type="password" autocomplete="new-password" placeholder="Nhập lại mật khẩu" required><button type="button" data-action="toggle-pass" aria-label="Hiện mật khẩu">'+ico('eye',17)+'</button></div></label><label class="check-line"><input type="checkbox" name="agree"> Tôi đồng ý với điều khoản sử dụng demo.</label>':'<div class="form-options"><label class="check-line"><input type="checkbox" name="remember"> Ghi nhớ đăng nhập</label><button type="button" data-action="forgot">Quên mật khẩu?</button></div>'}<p class="form-error" role="alert" hidden></p><button class="btn btn-primary auth-submit" type="submit">${reg?'Tạo tài khoản':'Đăng nhập'} ${ico('arrow',17)}</button></form>${reg?'':'<div class="social-login"><span>hoặc đăng nhập với</span><div><button data-action="oauth">Google</button><button data-action="oauth">Apple</button></div></div>'}<p class="auth-switch">${reg?'Đã có tài khoản?':'Chưa có tài khoản?'} <a href="/${reg?'login':'register'}" data-link>${reg?'Đăng nhập ngay':'Đăng ký ngay'}</a></p><a href="/" data-link class="back-link">← Quay về trang chủ</a></div></div><div class="auth-art"><div><span class="eyebrow light">TRẢI NGHIỆM NEXTECH</span><h2>${reg?'Tham gia NEXTECH<br>Nhận ngay ưu đãi':'Công nghệ kết nối<br>tương lai'}</h2><p>Thiết bị chính hãng, dịch vụ tận tâm và những trải nghiệm đáng nhớ.</p><div class="auth-benefits"><span>${ico('shield',18)} Sản phẩm chính hãng</span><span>${ico('truck',18)} Giao hàng toàn quốc</span><span>${ico('gift',18)} Ưu đãi thành viên</span></div></div></div></main>`;}
+function crumb(name){return `<div class="breadcrumb"><a href="/" data-link>Trang chủ</a> ${ico('chevron',14)} ${name}</div>`;}
+function cartRow(x){const a=p(x.id);if(!a)return '';return `<div class="cart-row"><label class="cart-check"><input type="checkbox" data-action="select" data-id="${x.id}" ${state.selected.includes(x.id)?'checked':''} aria-label="Chọn ${esc(a.name)}"></label>${img(x.id)}<div class="cart-info"><small>${a.brand}</small><h3>${esc(a.name)}</h3><p>${esc(a.variant)}</p><span class="stock">● Còn hàng</span></div><div class="cart-price"><strong>${cash(a.price)}</strong><del>${cash(a.old)}</del></div><div class="quantity"><button data-action="qty" data-id="${x.id}" data-delta="-1" aria-label="Giảm số lượng">${ico('minus',15)}</button><span>${x.qty}</span><button data-action="qty" data-id="${x.id}" data-delta="1" aria-label="Tăng số lượng">${ico('plus',15)}</button></div><strong class="line-total">${cash(a.price*x.qty)}</strong><button class="icon-button delete" data-action="remove" data-id="${x.id}" aria-label="Xóa sản phẩm">${ico('trash',17)}</button></div>`;}
+function cart(){const chosen=state.cart.filter(x=>state.selected.includes(x.id));const subtotal=chosen.reduce((n,x)=>n+p(x.id).price*x.qty,0),discount=state.coupon==='NEX10'?Math.round(subtotal*.1):0,ship=subtotal&&subtotal<2000000?30000:0;return `${header()}<main class="container inner-page">${crumb('Giỏ hàng')}<div class="page-heading"><div><span class="eyebrow">MUA SẮM CÙNG NEXTECH</span><h1>Giỏ hàng <span class="count-pill">${count()} sản phẩm</span></h1><p>Kiểm tra sản phẩm và hoàn tất đơn hàng của bạn.</p></div><span class="page-assurance">${ico('shield')} Đặt hàng demo an toàn</span></div>${state.cart.length?`<div class="cart-layout"><section class="cart-list"><div class="cart-toolbar"><label><input type="checkbox" data-action="select-all" ${state.selected.length===state.cart.length?'checked':''}> Chọn tất cả (${state.cart.length} sản phẩm)</label><button data-action="remove-selected">${ico('trash',15)} Xóa sản phẩm đã chọn</button></div>${state.cart.map(cartRow).join('')}<div class="coupon-banner">${ico('gift',24)}<span><b>Bạn có mã giảm giá?</b><small>Nhập NEX10 để giảm 10%.</small></span></div></section><aside class="summary"><div class="summary-top">${ico('truck',23)}<span><b>Đơn hàng của bạn</b><small>Kiểm tra tổng giá trị trước khi đặt hàng</small></span></div><div class="summary-body"><div class="summary-line"><span>Tạm tính (${chosen.length} sản phẩm)</span><b>${cash(subtotal)}</b></div><div class="summary-line"><span>Giảm giá</span><b class="green">-${cash(discount)}</b></div><div class="summary-line"><span>Phí vận chuyển</span><b class="green">${ship?cash(ship):'Miễn phí'}</b></div><form id="coupon-form"><label for="coupon-input">Mã giảm giá</label><div><input id="coupon-input" name="code" placeholder="Nhập mã giảm giá" value="${esc(state.coupon)}"><button class="btn btn-soft">Áp dụng</button></div></form><div class="summary-total"><span>Tổng thanh toán</span><strong>${cash(subtotal-discount+ship)}</strong></div><small>Đã bao gồm ưu đãi và phí vận chuyển</small><button class="btn btn-primary checkout" data-action="checkout" ${chosen.length?'':'disabled'}>Tiến hành đặt hàng ${ico('arrow',17)}</button><a class="btn btn-outline" href="/" data-link>← Tiếp tục mua sắm</a></div><div class="summary-trust">${ico('shield',17)} Không phát sinh thanh toán thật</div></aside></div>`:`<div class="empty">${ico('bag',40)}<h2>Giỏ hàng đang trống</h2><p>Hãy khám phá những sản phẩm công nghệ dành cho bạn.</p><a class="btn btn-primary" href="/" data-link>Khám phá sản phẩm</a></div>`}<section class="section"><div class="section-title"><div><span class="eyebrow">DÀNH RIÊNG CHO BẠN</span><h2>Có thể bạn cũng thích</h2></div></div><div class="product-grid">${products.slice(2,6).map(card).join('')}</div></section></main>${footer()}`;}
+function orderCard(o){const a=p(o.items[0]?.id);return `<article class="order-card"><div class="order-card-top"><div><small>Mã đơn hàng</small><h3>#${esc(o.id)}</h3><small>${new Date(o.date).toLocaleString('vi-VN')}</small></div><span class="status ${o.status}">${statusLabels[o.status]}</span></div><div class="order-card-main">${a?img(a.id):''}<div><b>${esc(a?.name||'Sản phẩm')}</b><small>${o.items.length} sản phẩm · ${esc(a?.variant||'')}</small></div><div class="order-total"><small>Tổng thanh toán</small><strong>${cash(o.total)}</strong></div></div>${o.status!=='cancelled'?'<div class="progress"><span class="done">Đã đặt hàng</span><i></i><span class="'+(o.status!=='pending'?'done':'')+'">Đã xác nhận</span><i></i><span class="'+(['shipping','completed'].includes(o.status)?'done':'')+'">Đang giao</span><i></i><span class="'+(o.status==='completed'?'done':'')+'">Hoàn thành</span></div>':''}<div class="order-card-bottom"><span>${ico('truck',17)} Giao hàng toàn quốc</span><div><button class="btn btn-outline" data-action="detail" data-id="${o.id}">Xem chi tiết</button><button class="btn btn-primary" data-action="reorder" data-id="${o.id}">Mua lại</button></div></div></article>`;}
+function orderResults(){const list=state.orders.filter(o=>(state.orderFilter==='all'||o.status===state.orderFilter)&&o.id.toLowerCase().includes(state.orderQuery.toLowerCase()));return list.length?list.map(orderCard).join(''):`<div class="empty">${ico('box',40)}<h2>Không tìm thấy đơn hàng</h2><p>Thử đổi bộ lọc hoặc mã đơn khác.</p></div>`;}
+function orders(){return `${header()}<main class="container inner-page">${crumb('Đơn hàng')}<div class="page-heading"><div><span class="eyebrow">THEO DÕI ĐƠN HÀNG</span><h1>Đơn hàng của tôi</h1><p>Theo dõi trạng thái và quản lý lịch sử mua sắm của bạn.</p></div><div class="page-visual">${ico('box',42)}</div></div><div class="order-controls"><div class="tabs">${[['all','Tất cả'],['pending','Chờ xác nhận'],['shipping','Đang giao'],['completed','Hoàn thành'],['cancelled','Đã hủy']].map(([v,t])=>`<button data-action="order-filter" data-value="${v}" class="${state.orderFilter===v?'active':''}">${t} <span>${v==='all'?state.orders.length:state.orders.filter(x=>x.status===v).length}</span></button>`).join('')}</div><label class="order-search">${ico('search',17)}<input id="order-query" placeholder="Tìm theo mã đơn..." value="${esc(state.orderQuery)}"></label></div><div id="order-results">${orderResults()}</div></main>${footer()}`;}
+function graph(values){const max=Math.max(...values)*1.15;const pts=values.map((v,i)=>`${i*100/(values.length-1)},${100-v*100/max}`).join(' ');return `<svg class="line-graph" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Biểu đồ doanh thu"><polyline points="${pts}" fill="none" stroke="#155dfc" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/></svg>`;}
+const adminMenus=[['Tổng quan','chart'],['Sản phẩm','box'],['Đơn hàng','bag'],['Khách hàng','users'],['Khuyến mãi','gift'],['Kho hàng','filter'],['Báo cáo','chart'],['Cài đặt','settings']];
+function admin(){const values=state.range==='7 ngày'?[28,42,39,54,48,69,62]:state.range==='30 ngày'?[22,35,31,49,57,53,71,67,85,76]:[25,33,29,42,46,61,58,68,71,79,85,92];return `<div class="admin-shell"><aside class="sidebar">${logo()}<small>TỔNG QUAN</small><nav>${adminMenus.map(([name,iconName])=>`<button data-action="admin-section" data-value="${name}" class="${state.adminSection===name?'active':''}">${ico(iconName,18)} ${name}</button>`).join('')}</nav><div class="sidebar-note">${ico('bolt')}<b>Nâng cấp quản trị</b><p>Bản xem trước. Kết nối API để quản lý dữ liệu thật.</p><button data-action="info" data-msg="Quản trị hiện là giao diện demo.">Tìm hiểu thêm →</button></div><a href="/" data-link>← Xem cửa hàng</a></aside><main class="admin-main"><div class="admin-top"><label>${ico('search',18)}<input id="admin-query" placeholder="Tìm sản phẩm, đơn hàng..."></label><div><button class="icon-button" data-action="info" data-msg="Chưa có thông báo mới." aria-label="Thông báo">${ico('bell')}</button><span class="avatar">AD</span><span><b>Quản trị viên</b><small>Admin · NEXTECH</small></span></div></div><div class="admin-content"><div class="admin-heading"><div><span>Thứ Hai, 19 tháng 10, 2026</span><h1>${state.adminSection==='Tổng quan'?'Xin chào, Quản trị viên ✦':state.adminSection}</h1><p>${state.adminSection==='Tổng quan'?'Cùng theo dõi tình hình kinh doanh của NEXTECH hôm nay.':'Dữ liệu quản trị minh họa, sẵn sàng kết nối backend.'}</p></div><div class="range-badge">${ico('calendar',16)} ${state.range}</div></div>${state.adminSection==='Tổng quan'?`<div class="kpis">${[['Tổng doanh thu','55.850.000₫','chart','blue'],['Tổng đơn hàng','3.028','bag','mint'],['Khách hàng mới','1.245','users','violet'],['Tỷ lệ chuyển đổi','3,8%','filter','orange']].map(([label,value,symbol,tone])=>`<div class="kpi"><span class="kpi-icon ${tone}">${ico(symbol,19)}</span><small>${label}</small><strong>${value}</strong><span class="growth">↗ +12,8% <em>so với kỳ trước</em></span><div class="spark">${graph([3,5,4,7,6,9])}</div></div>`).join('')}</div><div class="admin-charts"><section class="admin-panel"><div class="panel-heading"><div><h2>Tổng quan doanh thu</h2><p>Biểu đồ doanh thu theo thời gian</p></div><div class="segments">${['7 ngày','30 ngày','12 tháng'].map(x=>`<button data-action="range" data-value="${x}" class="${state.range===x?'active':''}">${x}</button>`).join('')}</div></div><div class="large-graph"><div class="graph-y"><span>80 tr</span><span>60 tr</span><span>40 tr</span><span>20 tr</span><span>0</span></div>${graph(values)}</div><div class="graph-x">${values.map((_,i)=>`<span>${state.range==='12 tháng'?'T'+(i+1):'Ngày '+(i+1)}</span>`).join('')}</div></section><section class="admin-panel"><div class="panel-heading"><div><h2>Hiệu suất danh mục</h2><p>Tỷ trọng doanh thu theo nhóm</p></div></div><div class="donut-wrap"><div class="donut"><span><b>55,9</b><small>triệu đồng</small></span></div><div class="legend"><span><i style="background:#155dfc"></i>Laptop <b>42%</b></span><span><i style="background:#38bdf8"></i>Điện thoại <b>24%</b></span><span><i style="background:#a855f7"></i>Phụ kiện <b>18%</b></span><span><i style="background:#f97316"></i>Gaming <b>10%</b></span><span><i style="background:#e9eef8"></i>Khác <b>6%</b></span></div></div></section></div><div class="admin-bottom"><section class="admin-panel"><div class="panel-heading"><div><h2>Đơn hàng gần đây</h2><p>Đơn đặt hàng và trạng thái xử lý</p></div><a class="text-link" href="/orders" data-link>Xem tất cả →</a></div><div class="table-scroll"><table><thead><tr><th>Mã đơn</th><th>Khách hàng</th><th>Sản phẩm</th><th>Giá trị</th><th>Trạng thái</th><th>Ngày đặt</th><th>Thao tác</th></tr></thead><tbody>${state.orders.slice(0,5).map(o=>`<tr><td><b>#${esc(o.id)}</b></td><td>${esc(o.customer)}</td><td>${esc(p(o.items[0].id)?.name||'')}</td><td>${cash(o.total)}</td><td><span class="status ${o.status}">${statusLabels[o.status]}</span></td><td>${new Date(o.date).toLocaleDateString('vi-VN')}</td><td><button class="icon-button" data-action="detail" data-id="${o.id}" aria-label="Chi tiết đơn">${ico('eye',16)}</button></td></tr>`).join('')}</tbody></table></div></section><section class="admin-panel"><div class="panel-heading"><div><h2>Cảnh báo kho hàng</h2><p>Sản phẩm sắp hết hàng</p></div></div>${products.filter(x=>x.stock<10).slice(0,4).map(x=>`<div class="stock-row">${img(x.id)}<span><b>${esc(x.name)}</b><small>SKU: NX-${String(x.id).padStart(4,'0')}</small></span><strong>${x.stock}</strong><em>Sắp hết</em></div>`).join('')}</section></div>`:`<div class="admin-panel demo-panel">${ico('box',40)}<h2>${state.adminSection} · Bản xem trước</h2><p>Mục này sẽ hiển thị dữ liệu thật khi kết nối API quản trị.</p>${btn('Về tổng quan','admin-section','data-value="Tổng quan"')}</div>`}</div></main></div>`;}
+function modal(){if(!state.modal)return '';const o=state.orders.find(x=>x.id===state.modal);if(!o)return '';return `<div class="modal-backdrop" data-action="close"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="icon-button modal-close" data-action="close" aria-label="Đóng">${ico('close')}</button><span class="eyebrow">CHI TIẾT ĐƠN HÀNG</span><h2 id="modal-title">Đơn #${esc(o.id)}</h2><p>Đặt lúc ${new Date(o.date).toLocaleString('vi-VN')} · ${statusLabels[o.status]}</p><div class="modal-items">${o.items.map(x=>`<div>${img(x.id)}<span><b>${esc(p(x.id)?.name||'Sản phẩm')}</b><small>Số lượng: ${x.qty}</small></span><strong>${cash((p(x.id)?.price||0)*x.qty)}</strong></div>`).join('')}</div><div class="summary-line"><span>Tổng thanh toán</span><b>${cash(o.total)}</b></div><p>Đơn minh họa, không phát sinh thanh toán thật.</p>${btn('Mua lại '+ico('arrow',16),'reorder',`data-id="${o.id}"`)}</div></div>`;}
+function render(){const path=location.pathname;document.title=`${{'/':'Trang chủ','/login':'Đăng nhập','/register':'Đăng ký','/cart':'Giỏ hàng','/orders':'Đơn hàng','/admin':'Quản trị demo'}[path]||'Trang chủ'} | NEXTECH`;document.querySelector('#app').innerHTML=path==='/login'||path==='/register'?auth(path.slice(1)):path==='/cart'?cart():path==='/orders'?orders():path==='/admin'?admin():home();document.querySelector('#app').insertAdjacentHTML('beforeend',modal());if(path==='/login'){const form=document.querySelector('#login-form');form.insertAdjacentHTML('afterend',`<div class="demo-account"><b>Tài khoản dùng thử</b><span>Email: <code>${DEMO_ACCOUNT.email}</code></span><span>Mật khẩu: <code>${DEMO_ACCOUNT.password}</code></span><small>Chỉ dùng cho bản demo; không phải tài khoản bảo mật thật.</small></div>`);form.addEventListener('submit',loginDemo);}if(path==='/register')document.querySelector('#register-form').addEventListener('submit',saveRegisteredDemo,true);}
+const redraw=()=>{persist();render();};
+function add(id,qty=1){const a=p(id);if(!a)return;const x=state.cart.find(v=>v.id===a.id);if(x)x.qty=Math.min(a.stock,x.qty+qty);else state.cart.push({id:a.id,qty:Math.min(qty,a.stock)});state.selected=state.cart.map(v=>v.id);redraw();notice(`Đã thêm ${a.name} vào giỏ hàng`);}
+function formError(form,msg){const e=form.querySelector('.form-error');e.textContent=msg;e.hidden=false;form.querySelector('[type="submit"]').disabled=false;}
+async function hashDemoPassword(salt,password){const bytes=new TextEncoder().encode(`${salt}:${password}`);const digest=await crypto.subtle.digest('SHA-256',bytes);return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');}
+async function saveRegisteredDemo(event){const form=event.currentTarget,data=new FormData(form),name=String(data.get('name')||'').trim(),email=String(data.get('email')||'').trim().toLowerCase(),phone=String(data.get('phone')||'').replace(/\s/g,''),password=String(data.get('password')||'');if(name.length<2||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^0\d{9,10}$/.test(phone)||password.length<8||password!==data.get('confirm')||!data.get('agree'))return;const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,'0')).join('');store('registered_account',{name,email,phone,salt,hash:await hashDemoPassword(salt,password)});}
+async function loginDemo(event){event.preventDefault();event.stopPropagation();const form=event.currentTarget,data=new FormData(form),identifier=String(data.get('email')||'').trim().toLowerCase(),password=String(data.get('password')||''),submit=form.querySelector('[type="submit"]');submit.disabled=true;form.querySelector('.form-error').hidden=true;if(!identifier||!password)return formError(form,'Vui lòng nhập tài khoản và mật khẩu.');submit.textContent='Đang đăng nhập…';let account=null;if(identifier===DEMO_ACCOUNT.email&&password===DEMO_ACCOUNT.password)account={name:DEMO_ACCOUNT.name,email:DEMO_ACCOUNT.email};else{const registered=load('registered_account',null);if(registered&&(identifier===registered.email||identifier===registered.phone)&&await hashDemoPassword(registered.salt,password)===registered.hash)account={name:registered.name,email:registered.email};}if(!account)return formError(form,'Tài khoản hoặc mật khẩu không đúng. Hãy dùng tài khoản demo bên dưới.');state.account=account;store('account',account);navTo('/');notice(`Đăng nhập thành công, ${account.name}!`);}
+document.addEventListener('click',e=>{const link=e.target.closest('a[data-link]');if(link){e.preventDefault();navTo(link.getAttribute('href'));return;}const b=e.target.closest('[data-action]');if(!b)return;const act=b.dataset.action,id=Number(b.dataset.id);if(act==='menu'){state.menu=!state.menu;render();}else if(act==='add')add(id);else if(act==='favorite'){state.favorites=state.favorites.includes(id)?state.favorites.filter(x=>x!==id):[...state.favorites,id];redraw();notice('Đã cập nhật yêu thích');}else if(act==='favorites')notice(state.favorites.length?`Yêu thích: ${products.filter(x=>state.favorites.includes(x.id)).map(x=>x.name).join(', ')}`:'Bạn chưa có sản phẩm yêu thích.');else if(act==='category'){state.category=b.dataset.value;state.query='';navTo('/');document.querySelector('#products')?.scrollIntoView({behavior:'smooth'});}else if(act==='clear'){state.category='';state.query='';navTo('/');}else if(act==='shop'){state.category='';navTo('/');document.querySelector('#products')?.scrollIntoView({behavior:'smooth'});}else if(act==='slide'){state.slide=id;render();}else if(act==='qty'){const x=state.cart.find(v=>v.id===id);if(x)x.qty=Math.max(1,Math.min(p(id).stock,x.qty+Number(b.dataset.delta)));redraw();}else if(act==='remove'){state.cart=state.cart.filter(x=>x.id!==id);state.selected=state.selected.filter(x=>x!==id);redraw();}else if(act==='remove-selected'){state.cart=state.cart.filter(x=>!state.selected.includes(x.id));state.selected=[];redraw();}else if(act==='select-all'){state.selected=b.checked?state.cart.map(x=>x.id):[];render();}else if(act==='select'){state.selected=b.checked?[...state.selected,id]:state.selected.filter(x=>x!==id);render();}else if(act==='checkout'){const items=state.cart.filter(x=>state.selected.includes(x.id));if(!items.length)return;const subtotal=items.reduce((n,x)=>n+p(x.id).price*x.qty,0);const discount=state.coupon==='NEX10'?Math.round(subtotal*.1):0;state.orders.unshift({id:'NT'+Date.now(),date:new Date().toISOString(),status:'pending',items:items.map(x=>({...x})),total:subtotal-discount+(subtotal<2000000?30000:0),customer:state.account?.name||'Khách hàng NEXTECH'});state.cart=state.cart.filter(x=>!state.selected.includes(x.id));state.selected=[];state.coupon='';persist();navTo('/orders');notice('Đặt hàng demo thành công!');}else if(act==='order-filter'){state.orderFilter=b.dataset.value;render();}else if(act==='detail'){state.modal=b.dataset.id;render();document.querySelector('.modal-close')?.focus();}else if(act==='close'){if(e.target===b||b.classList.contains('modal-close')){state.modal=null;render();}}else if(act==='reorder'){const o=state.orders.find(x=>x.id===b.dataset.id);o?.items.forEach(x=>{const found=state.cart.find(v=>v.id===x.id);if(found)found.qty=Math.min(p(x.id).stock,found.qty+x.qty);else state.cart.push({...x});});state.selected=state.cart.map(x=>x.id);persist();navTo('/cart');notice('Đã thêm lại sản phẩm vào giỏ');}else if(act==='toggle-pass'){const input=b.parentElement.querySelector('input');input.type=input.type==='password'?'text':'password';b.setAttribute('aria-label',input.type==='password'?'Hiện mật khẩu':'Ẩn mật khẩu');}else if(act==='oauth')notice('Google và Apple chỉ là giao diện minh họa.');else if(act==='forgot')notice('Khôi phục mật khẩu sẽ có khi kết nối tài khoản thật.');else if(act==='info')notice(b.dataset.msg||'Tính năng đang được chuẩn bị.');else if(act==='range'){state.range=b.dataset.value;render();}else if(act==='admin-section'){state.adminSection=b.dataset.value;render();}});
+document.addEventListener('submit',e=>{e.preventDefault();const form=e.target;if(form.id==='search-form'){state.query=String(new FormData(form).get('query')||'').trim();state.category='';navTo('/');document.querySelector('#products')?.scrollIntoView({behavior:'smooth'});}else if(form.id==='coupon-form'){const code=String(new FormData(form).get('code')||'').trim().toUpperCase();if(code==='NEX10'){state.coupon=code;render();notice('Đã áp dụng mã NEX10 giảm 10%');}else notice('Mã không hợp lệ. Hãy thử NEX10.');}else if(form.id==='newsletter'){form.reset();notice('Đã ghi nhận email demo của bạn.');}else if(['login-form','register-form'].includes(form.id)){const data=new FormData(form),reg=form.id==='register-form',email=String(data.get('email')||'').trim(),pass=String(data.get('password')||''),name=String(data.get('name')||'').trim(),phone=String(data.get('phone')||'').replace(/\s/g,'');const validEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),validPhone=/^0\d{9,10}$/.test(email.replace(/\s/g,''));const submit=form.querySelector('[type="submit"]');submit.disabled=true;if(!validEmail&&(reg||!validPhone))return formError(form,'Email hoặc số điện thoại chưa hợp lệ.');if(!pass||(reg&&pass.length<8))return formError(form,reg?'Mật khẩu cần ít nhất 8 ký tự.':'Vui lòng nhập mật khẩu.');if(reg&&name.length<2)return formError(form,'Vui lòng nhập họ và tên.');if(reg&&!/^0\d{9,10}$/.test(phone))return formError(form,'Số điện thoại chưa hợp lệ.');if(reg&&pass!==data.get('confirm'))return formError(form,'Mật khẩu xác nhận không khớp.');if(reg&&!data.get('agree'))return formError(form,'Bạn cần đồng ý điều khoản.');submit.textContent=reg?'Đang tạo tài khoản…':'Đang đăng nhập…';setTimeout(()=>{state.account={name:reg?name:'Khách hàng',email};store('account',state.account);navTo('/');notice(reg?'Tạo tài khoản demo thành công!':'Đăng nhập demo thành công!');},400);}});
+document.addEventListener('input',e=>{if(e.target.id==='order-query'){state.orderQuery=e.target.value;document.querySelector('#order-results').innerHTML=orderResults();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.modal){state.modal=null;render();}});
+window.addEventListener('popstate',render);
+document.addEventListener('click',e=>{const button=e.target.closest('[data-action]');if(!button)return;if(button.dataset.action==='logout'){state.account=null;localStorage.removeItem('nx_account');navTo('/');notice('Đã đăng xuất khỏi phiên demo.');}if(button.dataset.action==='categories'){navTo('/');document.querySelector('.category-grid')?.scrollIntoView({behavior:'smooth'});}});
+document.addEventListener('keydown',e=>{if(e.target.id==='admin-query'&&e.key==='Enter'){e.preventDefault();state.query=e.target.value.trim();state.category='';navTo('/');document.querySelector('#products')?.scrollIntoView({behavior:'smooth'});}});
+render();

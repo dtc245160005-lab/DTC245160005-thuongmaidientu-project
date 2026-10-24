@@ -4,6 +4,9 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const client = require('prom-client');
 const path = require('path');
+const { loadLocalAdminConfig, makeAdminRouter } = require('./admin-auth.cjs');
+
+loadLocalAdminConfig();
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -67,7 +70,7 @@ app.use((req, res, next) => {
 
   res.on('finish', () => {
     const route = req.route
-      ? req.baseUrl + req.route.path
+      ? (Array.isArray(req.route.path) ? req.path : req.baseUrl + req.route.path)
       : (req.path.startsWith('/api') ? 'unknown' : 'static');
     const seconds = Number(process.hrtime.bigint() - start) / 1e9;
     const labels = {
@@ -94,7 +97,13 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+app.use('/api/admin', makeAdminRouter({ email: process.env.ADMIN_EMAIL, passwordHash: process.env.ADMIN_PASSWORD_HASH }));
+
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0 }));
+
+app.get(['/login', '/register', '/admin', '/admin/login', '/orders', '/orders/:id', '/cart', '/checkout', '/payment-demo/:id', '/profile', '/products/:slug'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const wrap = fn => (req, res, next) => fn(req, res, next).catch(next);
 const isToken = value =>
