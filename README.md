@@ -1,100 +1,183 @@
-# Website thương mại điện tử - Đề 9
+# Website thương mại điện tử NEXTECH - Đề 9
 
 Sinh viên: **Ma Đình Tuyển**
 MSSV: **DTC245160005**
+Học phần: Triển khai và Quản trị Hệ thống Phần mềm
 
 ## Giới thiệu
 
-Website bán hàng trực tuyến có chức năng quản lý sản phẩm, giỏ hàng và đơn hàng. Dữ liệu được lưu trong MySQL. Hệ thống được triển khai bằng Docker Compose trên máy ảo Ubuntu.
-
-## Luồng mua hàng NEXTECH demo
-
-Giao diện NEXTECH hiện có trang chủ, chi tiết sản phẩm theo biến thể/SKU, giỏ hàng, thanh toán, danh sách và chi tiết đơn hàng, đăng nhập/đăng ký, hồ sơ/địa chỉ và các mục quản trị demo. Mã `NEX10` giảm 10% cho đơn demo.
-
-**Đơn hàng lưu trong MySQL.** Khi đặt hàng, trình duyệt chỉ gửi SKU, số lượng, địa chỉ và phương thức thanh toán tới `POST /api/nextech/orders` (`app/nextech-orders.cjs`). Máy chủ tự tính giá từ bảng `nx_products`, kiểm tra và giữ tồn kho trong bảng `nx_inventory` bằng giao dịch `SELECT … FOR UPDATE` (không bán vượt tồn kho khi nhiều người đặt cùng lúc), rồi lưu vào `nx_orders`, `nx_order_items` và `nx_order_events`. Đơn mới làm tăng `thuongmaidientu_orders_created_total` và `thuongmaidientu_revenue_vnd_total`, nên số liệu trên Grafana thay đổi theo. Hủy đơn, thanh toán giả lập và đổi trả đều được máy chủ kiểm tra trước. Khách hàng xác thực bằng mã bí mật của đơn (`X-Order-Token`, máy chủ chỉ lưu bản băm SHA-256). Các thao tác quản trị (`/api/admin/orders/...`) bắt buộc phải có cookie phiên quản trị. Đơn chờ thanh toán quá hạn được máy chủ hủy mỗi phút và trả lại tồn kho.
-
-Sản phẩm, tài khoản khách, địa chỉ và mã khuyến mãi vẫn lưu trong LocalStorage của trình duyệt (`commerce-service.mjs`). Phiên đăng nhập khách nằm trong SessionStorage. Khi chạy local mà không có MySQL (không đặt `NODE_ENV=production`), đơn được lưu tạm trong trình duyệt và giao diện có thông báo. Trên production thì báo lỗi, không lưu tạm.
-
-Luồng thanh toán hỗ trợ COD, chuyển khoản mô phỏng, VNPAY mô phỏng và MoMo mô phỏng. Các nút thanh toán trực tuyến chỉ tạo kết quả giả lập; không có kết nối cổng thanh toán, tài khoản nhận tiền hoặc giao dịch thật. Đơn hàng có mã chống tạo trùng, giữ tồn kho khi đặt, trừ tồn khi giao và trả tồn khi hủy trước giao. Đơn demo chờ thanh toán quá hạn được hủy và trả tồn khi ứng dụng được mở hoặc thao tác lại (15 phút cho ví, 24 giờ cho chuyển khoản). Các thao tác quản trị sử dụng cùng dữ liệu demo và chỉ xuất hiện trong chế độ quản trị demo; đây **không phải** phân quyền máy chủ. Không dùng bản này để lưu thông tin khách hàng hoặc nhận thanh toán thật.
-
-Để thử thanh toán: thêm sản phẩm vào giỏ, mở `/checkout`, điền đầy đủ thông tin nhận hàng và chọn phương thức. COD tạo đơn rồi chờ trả tiền khi nhận hàng. VNPAY/MoMo demo mở trang `/payment-demo/:id` để chọn kết quả thành công hoặc thất bại giả lập. Chuyển khoản demo tạo đơn chờ quản trị demo đối soát; không có tài khoản ngân hàng hay mã QR thật. Lỗi nhập liệu được hiển thị ngay dưới nút đặt hàng.
-
-Chạy nhanh: `cd app`, `npm ci`, `npm start`; mở `http://localhost:3000/`. Kiểm tra logic bằng `npm test`. Tài khoản khách demo: `demo@nextech.vn` / `Nextech@2026`. Có thể tạo tài khoản mới ngay trên trang đăng ký.
-
-Tài khoản quản trị local được tạo một lần bằng `cd app && npm run admin:create`; lệnh in email/mật khẩu duy nhất và ghi **bản băm mật khẩu** vào `app/.env.local` (đã bị Git bỏ qua). Khởi động lại `npm start`, vào `/admin/login` để đăng nhập. Express xác minh mật khẩu, giới hạn số lần thử sai và cấp cookie phiên `HttpOnly` có hạn 8 giờ. Đăng xuất hủy phiên trên máy chủ. Với Docker, cấu hình `ADMIN_EMAIL` và `ADMIN_PASSWORD_HASH` trong `.env` riêng trước khi chạy. Các thao tác quản trị NEXTECH vẫn thay đổi dữ liệu demo LocalStorage; đăng nhập máy chủ chưa biến dữ liệu đó thành hệ thống phân quyền sản xuất.
-
-API Express/MySQL cũ (`/api/products`, `/api/cart`, `/api/orders`) vẫn nằm trong `app/server.js` và phục vụ bộ dữ liệu Petshop ban đầu. Để triển khai thật vẫn cần chuyển sản phẩm, tài khoản khách và khuyến mãi lên máy chủ, đồng thời tích hợp sandbox thanh toán.
-
-**Cập nhật CSDL đang chạy.** File `db/init/03-nextech.sql` chỉ tự chạy khi volume MySQL được tạo lần đầu. Với volume đã có dữ liệu, chạy một lần lệnh sau (ứng dụng sẽ tự thêm tồn kho ban đầu khi khởi động):
-
-```bash
-docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < db/init/03-nextech.sql
-docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < db/init/04-nextech-products.sql
-docker compose up -d --build app
-```
-
-**Thêm sản phẩm có ảnh.** Trong trang quản trị, mục "Sản phẩm & tồn kho", form "Thêm sản phẩm" cho phép chọn ảnh từ máy (PNG, JPEG, WebP, GIF, tối đa 2 MB). Sản phẩm được lưu vào bảng `nx_products`, ảnh lưu ngay trong MySQL (cột `MEDIUMBLOB`) và được phục vụ qua `/api/nextech/products/<SKU>/image`. Mọi trình duyệt đều thấy sản phẩm này và đặt mua được. Máy chủ kiểm tra cả loại tệp lẫn nội dung ảnh, nên không tải lên được tệp không phải ảnh. Giá, tồn kho, ảnh (nút "Đổi ảnh") và trạng thái ẩn/hiện được sửa trên máy chủ. Nút "Xóa" gỡ sản phẩm khỏi cửa hàng, còn đơn hàng cũ vẫn được giữ. Cửa hàng không còn sản phẩm mẫu cố định: mọi sản phẩm đều do quản trị thêm và bắt buộc có ảnh. Hai banner cạnh ảnh lớn ở trang chủ hiển thị sản phẩm có ảnh và còn hàng.
-
-**Đặt hàng cần đăng nhập.** Khách phải đăng nhập tài khoản khách hàng mới vào được trang thanh toán. Đây là kiểm tra phía giao diện, vì tài khoản khách vẫn lưu trong trình duyệt.
-
-**Kiểm thử.** `npm test` chạy logic giao diện và API (không cần MySQL). Muốn kiểm thử với MySQL thật, khởi tạo một MySQL tạm từ `db/init` rồi chạy `NX_TEST_DB_PORT=<cổng> npm test`. Tài khoản mặc định là `app`/`apppw`, có thể đổi bằng `NX_TEST_DB_USER` và `NX_TEST_DB_PASSWORD`.
-
-**Route demo log lỗi.** Trên production, `GET /api/debug/error` bị tắt (trả 404). Khi cần demo Loki/Grafana, đặt `ENABLE_DEBUG_ROUTES=true` trong `.env`, chạy `docker compose up -d app`, demo xong thì đặt lại `false`.
-
-**Giới hạn đăng nhập quản trị theo IP.** Ứng dụng chỉ tin header `X-Forwarded-For` khi `TRUST_PROXY` được cấu hình. Docker Compose đặt `TRUST_PROXY=loopback, uniquelocal` vì app chỉ nhận kết nối từ Nginx trong mạng Docker nội bộ. Khi chạy trực tiếp bằng `npm start`, biến này để trống, nên giả header `X-Forwarded-For` không né được giới hạn 5 lần thử sai.
+NEXTECH là website bán thiết bị công nghệ: khách xem sản phẩm, thêm vào giỏ, đăng nhập để đặt hàng và theo dõi đơn; quản trị viên thêm sản phẩm kèm ảnh, quản lý tồn kho và xử lý đơn hàng. Ứng dụng viết bằng Node.js 22 + Express, dữ liệu lưu trong MySQL 8.4, toàn bộ hệ thống chạy bằng Docker Compose (12 container) trên máy ảo Ubuntu `192.168.126.134`.
 
 ## Thành phần hệ thống
 
-| Thành phần | Vai trò |
-|---|---|
-| Node.js và Express | Xử lý website và API |
-| MySQL | Lưu sản phẩm, đơn hàng và dữ liệu ứng dụng |
-| phpMyAdmin | Xem và quản lý cơ sở dữ liệu |
-| Nginx | Reverse proxy, HTTPS và security headers |
-| Prometheus và Grafana | Thu thập, hiển thị số liệu giám sát |
-| Loki và Promtail | Thu thập, lưu trữ và truy vấn log |
+| Thành phần | Phiên bản | Vai trò |
+|---|---|---|
+| Node.js + Express (`app`) | Node 22 | Website NEXTECH, API, `/metrics` |
+| MySQL (`db`) | 8.4 | Sản phẩm, ảnh, tồn kho, đơn hàng |
+| phpMyAdmin | 5.2 | Quản trị cơ sở dữ liệu |
+| Nginx | 1.27 (unprivileged) | Reverse proxy, HTTPS, security headers, rate limit |
+| Prometheus | 2.53 | Thu thập metrics (6 job), 4 luật cảnh báo |
+| Grafana | 11.3 | Dashboard "Thương mại điện tử - Tổng quan hệ thống" |
+| cAdvisor, node-exporter, nginx-exporter, mysqld-exporter | | Metrics container, máy chủ, Nginx, MySQL |
+| Loki + Promtail | 3.0 | Thu thập và truy vấn log tập trung |
 
-## Chuẩn bị môi trường
+Các mốc commit chính: `ded39cb` (Commit 1: ứng dụng, MySQL, Nginx HTTPS), `172266d` (Commit 2: Prometheus, Grafana), `ea1ebb5` (Commit 3: Loki, Promtail), `bc1dabf` (kiểm chứng hardening).
 
-- Máy Ubuntu có Docker Engine và Docker Compose v2.
-- Tạo file `.env` từ `.env.example`, sau đó đặt mật khẩu riêng.
-- File `.env` và khóa HTTPS không được đưa lên GitHub.
+## Cài đặt và chạy từ đầu
 
-## Chạy hệ thống
+Yêu cầu: Ubuntu có Docker Engine và Docker Compose v2, `openssl`. Các lệnh chạy trong thư mục dự án.
 
-Sau khi hoàn thành các file ứng dụng và cấu hình:
+### 1. Lấy mã nguồn
 
 ```bash
+git clone https://github.com/dtc245160005-lab/DTC245160005-thuongmaidientu-project.git ~/thuongmaidientu-project
+cd ~/thuongmaidientu-project
+```
+
+### 2. Tạo file `.env`
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+Mở `.env`, sửa `SERVER_IP` thành IP của máy và thay mọi giá trị `doi_mat_khau_...` bằng mật khẩu mạnh. Có thể sinh mật khẩu ngẫu nhiên bằng `openssl rand -base64 18`.
+
+### 3. Tạo chứng chỉ HTTPS tự ký
+
+Chứng chỉ và khóa không có trên GitHub, phải tạo trên máy chủ. Thay `192.168.126.134` bằng IP của máy:
+
+```bash
+openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+  -keyout nginx/certs/server.key -out nginx/certs/server.crt \
+  -subj "/CN=192.168.126.134" -addext "subjectAltName=IP:192.168.126.134"
+chmod 600 nginx/certs/server.key
+sudo chown 101:101 nginx/certs/server.key
+```
+
+### 4. Tạo tài khoản Basic Auth cho phpMyAdmin và Prometheus
+
+```bash
+printf "admin:$(openssl passwd -apr1 'DAT_MAT_KHAU_MANH_O_DAY')\n" > nginx/.htpasswd
+sudo chgrp 101 nginx/.htpasswd
+chmod 640 nginx/.htpasswd
+```
+
+> Phải tạo `nginx/.htpasswd` **trước** khi chạy `docker compose up`. Nếu file chưa có, Docker tự tạo một **thư mục** trùng tên và Nginx không khởi động được. Khi đó chạy `sudo rm -r nginx/.htpasswd`, tạo lại file theo lệnh trên rồi `docker compose up -d nginx`.
+
+### 5. Tạo tài khoản quản trị NEXTECH
+
+Build image ứng dụng rồi sinh mật khẩu và bản băm (mật khẩu chỉ in ra một lần, hãy ghi lại):
+
+```bash
+docker compose build app
+docker compose run --rm --no-deps app node -e "const c=require('crypto'),{hashPassword}=require('./admin-auth.cjs');const p='Nx@'+c.randomBytes(15).toString('base64url');console.log('Mat khau: '+p);console.log(\"ADMIN_PASSWORD_HASH='\"+hashPassword(p)+\"'\")"
+```
+
+Trong `.env`, đặt `ADMIN_EMAIL=<email quản trị>` và thay dòng `ADMIN_PASSWORD_HASH=` bằng dòng vừa in ra, **giữ nguyên dấu nháy đơn** (bản băm có ký tự `$`).
+
+### 6. Khởi động hệ thống
+
+```bash
+docker compose config -q
 docker compose up -d --build
 docker compose ps
 ```
 
-Dừng hệ thống và giữ lại dữ liệu MySQL:
+Kết quả đúng: 12 container `Up`, trong đó `db`, `app`, `nginx` ở trạng thái `healthy`. MySQL tự chạy các tệp trong `db/init/` ở lần khởi tạo đầu tiên.
+
+### 7. Tường lửa (khuyến nghị)
 
 ```bash
-docker compose down
+sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+sudo ufw enable
 ```
 
-## Địa chỉ truy cập dự kiến
+Dừng hệ thống và giữ dữ liệu: `docker compose down`. Không dùng `docker compose down -v` vì lệnh này xóa cả volume dữ liệu.
 
-| Thành phần | Địa chỉ |
-|---|---|
-| Website | `https://192.168.126.134/` |
-| phpMyAdmin | `https://192.168.126.134/phpmyadmin/` |
-| Prometheus | `https://192.168.126.134/prometheus/` |
-| Grafana | `https://192.168.126.134/grafana/` |
+## Địa chỉ truy cập
 
-Các địa chỉ trên sẽ được kiểm tra khi triển khai Nginx và các dịch vụ tương ứng.
+Trình duyệt sẽ cảnh báo chứng chỉ tự ký ở lần đầu, chọn tiếp tục truy cập.
 
-## Cấu trúc thư mục
+| Thành phần | Địa chỉ | Đăng nhập |
+|---|---|---|
+| Website NEXTECH | `https://192.168.126.134/` | Khách tự đăng ký, hoặc `demo@nextech.vn` / `Nextech@2026` |
+| Quản trị NEXTECH | `https://192.168.126.134/admin/login` | `ADMIN_EMAIL` và mật khẩu ở bước 5 |
+| phpMyAdmin | `https://192.168.126.134/phpmyadmin/` | Basic Auth (bước 4), sau đó `DBADMIN_USER` / `DBADMIN_PASSWORD` |
+| Prometheus | `https://192.168.126.134/prometheus/` | Basic Auth (bước 4) |
+| Grafana | `https://192.168.126.134/grafana/` | `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD` |
 
-- `app/`: mã nguồn website và Dockerfile.
-- `db/init/`: cấu trúc cơ sở dữ liệu và tài khoản MySQL.
-- `nginx/`: cấu hình reverse proxy.
-- `prometheus/`, `grafana/`: cấu hình giám sát.
-- `loki/`, `promtail/`: cấu hình thu thập log.
-- `docs/screenshots/`: ảnh minh chứng cho báo cáo.
+Truy cập `http://` được chuyển hướng 301 sang `https://`. Các dịch vụ còn lại (MySQL, app, Loki, exporter) chỉ nằm trong mạng Docker nội bộ, không mở cổng ra ngoài.
+
+## Cập nhật hệ thống đang chạy
+
+```bash
+git pull origin main
+docker compose up -d --build app
+```
+
+Các tệp trong `db/init/` chỉ tự chạy khi volume MySQL được tạo lần đầu. Với hệ thống đã có dữ liệu, chạy một lần các tệp được thêm sau:
+
+```bash
+docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < db/init/03-nextech.sql
+docker compose exec -T db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"' < db/init/04-nextech-products.sql
+```
+
+## Chức năng NEXTECH
+
+- **Sản phẩm:** do quản trị thêm trong mục "Sản phẩm & tồn kho", bắt buộc có ảnh (PNG, JPEG, WebP, GIF, tối đa 2 MB). Sản phẩm và ảnh lưu trong bảng `nx_products` (ảnh ở cột `MEDIUMBLOB`), phục vụ qua `/api/nextech/products/<SKU>/image`. Quản trị sửa giá, tồn kho, đổi ảnh, ẩn/hiện và xóa sản phẩm trên máy chủ. Máy chủ kiểm tra cả loại tệp lẫn nội dung ảnh.
+- **Đặt hàng:** khách phải đăng nhập mới vào được trang thanh toán. Trình duyệt chỉ gửi SKU, số lượng, địa chỉ và phương thức tới `POST /api/nextech/orders`. Máy chủ tự tính giá, khóa tồn kho bằng `SELECT … FOR UPDATE` (không bán vượt khi nhiều người đặt cùng lúc), lưu vào `nx_orders`, `nx_order_items`, `nx_order_events`. Mã chống tạo trùng ngăn đơn lặp khi bấm nhiều lần. Mã `NEX10` giảm 10%.
+- **Thanh toán mô phỏng:** COD, chuyển khoản, VNPAY và MoMo đều là giả lập, không có giao dịch tiền thật. Đơn chờ thanh toán quá hạn (15 phút với ví, 24 giờ với chuyển khoản) được máy chủ tự hủy và trả tồn kho.
+- **Quản trị đơn hàng:** chuyển trạng thái (xác nhận → chuẩn bị → giao → hoàn thành), xác nhận chuyển khoản, ghi nhận thu COD, hoàn tiền mô phỏng. Mọi API quản trị (`/api/admin/...`) yêu cầu cookie phiên quản trị.
+- **Giám sát nghiệp vụ:** mỗi đơn mới làm tăng `thuongmaidientu_orders_created_total` và `thuongmaidientu_revenue_vnd_total`, hiển thị trên Grafana. Hai bộ đếm này nằm trong bộ nhớ ứng dụng, nên về 0 khi container `app` khởi động lại; dữ liệu đơn hàng vẫn còn nguyên trong MySQL.
+- **Log:** ứng dụng ghi log JSON (`http_request`, `order_created`, `nextech_product_created`…), Promtail gắn nhãn `service`, `container`, `level` để truy vấn trên Grafana Explore.
+
+Giới hạn hiện tại: tài khoản khách, giỏ hàng, hồ sơ và địa chỉ vẫn lưu trong LocalStorage của trình duyệt; yêu cầu đăng nhập trước khi đặt hàng mới được kiểm tra ở giao diện.
+
+## Giám sát và log
+
+- Prometheus thu thập 6 job mỗi 15 giây: `prometheus`, `node-exporter`, `cadvisor`, `nginx`, `mysql`, `thuongmaidientu-app`. Xem tại `/prometheus/targets`.
+- Grafana tự nạp datasource (Prometheus, Loki) và dashboard 16 panel từ thư mục `grafana/`.
+- Một số truy vấn LogQL trong Grafana Explore (datasource Loki):
+
+```
+{service="nginx"}
+{service="app"} | json | msg="order_created"
+{service="app", level=~"warn|error"}
+{service=~".+"} |~ "(?i)error|warn|failed"
+sum by (service) (count_over_time({project="thuongmaidientu-project"}[5m]))
+```
+
+- Route `GET /api/debug/error` tạo lỗi giả để demo log, bị tắt trên production (trả 404). Khi cần demo, đặt `ENABLE_DEBUG_ROUTES=true` trong `.env`, chạy `docker compose up -d app`, demo xong đặt lại `false`.
 
 ## Bảo mật
 
-Hệ thống sẽ sử dụng tài khoản MySQL riêng cho ứng dụng, mật khẩu đặt trong `.env`, phân tách mạng Docker, hạn chế cổng công khai và security headers của Nginx. Các biện pháp sẽ được kiểm tra sau khi triển khai.
+Các biện pháp dưới đây đã được kiểm chứng trên máy ảo; lệnh và kết quả chi tiết ở [docs/hardening.md](docs/hardening.md).
+
+- Container `app` chạy bằng user `node` (UID 1000), Nginx bằng UID 101; `no-new-privileges` cho mọi dịch vụ; `cap_drop: ALL` và hệ thống tệp chỉ đọc cho app, Nginx và các dịch vụ giám sát.
+- Ba mạng Docker: `frontend`, `backend` (internal, chứa MySQL), `monitoring` (internal). Chỉ Nginx mở cổng 80/443; UFW chỉ cho phép 22, 80, 443.
+- Bí mật nằm trong `.env` (quyền 600), `nginx/.htpasswd` và `nginx/certs/`, đều bị `.gitignore` loại; `app/.dockerignore` không đưa `.env*` vào image.
+- MySQL: tài khoản ứng dụng chỉ có `SELECT, INSERT, UPDATE, DELETE` trên database dự án; `root` chỉ đăng nhập từ localhost; `local_infile=0`.
+- Nginx: chỉ TLS 1.2/1.3, HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy; giới hạn 20 yêu cầu/giây và 50 kết nối mỗi IP; `/metrics` trả 404, tệp ẩn như `/.env` trả 403; Basic Auth cho phpMyAdmin và Prometheus.
+- Ứng dụng: mật khẩu quản trị băm scrypt; cookie phiên `HttpOnly`, `Secure`, `SameSite=Strict`, hạn 8 giờ; khóa đăng nhập sau 5 lần sai trong 15 phút (chỉ tin `X-Forwarded-For` khi `TRUST_PROXY` được cấu hình); truy vấn SQL tham số hóa.
+
+## Kiểm thử
+
+```bash
+cd app
+npm ci
+npm test
+```
+
+`npm test` kiểm tra logic giỏ hàng, đơn hàng, đăng nhập quản trị và cấu hình máy chủ (không cần MySQL). Muốn chạy thêm nhóm kiểm thử với MySQL thật, khởi tạo một MySQL tạm từ `db/init` rồi chạy `NX_TEST_DB_PORT=<cổng> npm test` (tài khoản mặc định `app`/`apppw`, đổi bằng `NX_TEST_DB_USER`, `NX_TEST_DB_PASSWORD`).
+
+Chạy nhanh không cần Docker (chỉ để xem giao diện): `cd app && npm ci && npm start`, mở `http://localhost:3000/`. Khi không có MySQL, đơn hàng được lưu tạm trong trình duyệt. Tài khoản quản trị local tạo bằng `npm run admin:create` (ghi bản băm vào `app/.env.local`, đã bị Git bỏ qua).
+
+## Cấu trúc thư mục
+
+- `app/`: mã nguồn website (`server.js`, `nextech-orders.cjs`, `admin-auth.cjs`), giao diện trong `public/`, kiểm thử trong `test/`, Dockerfile.
+- `db/init/`: tạo bảng và tài khoản MySQL (`01-schema.sql`, `02-users.sh`, `03-nextech.sql`, `04-nextech-products.sql`).
+- `nginx/`: cấu hình reverse proxy; `certs/` chứa chứng chỉ (tạo ở bước 3).
+- `prometheus/`, `grafana/`: cấu hình giám sát, luật cảnh báo, dashboard.
+- `loki/`, `promtail/`: cấu hình thu thập log.
+- `docs/`: ghi nhận kiểm chứng bảo mật và thư mục ảnh minh chứng.
