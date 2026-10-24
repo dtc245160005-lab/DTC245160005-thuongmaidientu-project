@@ -125,25 +125,40 @@ export class DemoCommerceService {
     if(!paymentMethods.includes(input.paymentMethod))throw new Error('Phương thức thanh toán không hợp lệ.');
     const address=this.validateAddress(input.address);
     const delivery=input.delivery==='STORE'?'STORE':'HOME';
-    const price=this.estimate(lines,input.couponCode,delivery,address.province);
-    const now=new Date().toISOString(),id=`NT-${Date.now()}-${uid().slice(0,6).toUpperCase()}`,online=input.paymentMethod!=='COD';
-    const order={id,owner:this.owner(),customer:clone(address),delivery,paymentMethod:input.paymentMethod,paymentStatus:online?'PENDING':'UNPAID',status:'PENDING_CONFIRMATION',items:price.items,subtotal:price.subtotal,discount:price.discount,shipping:price.shipping,total:price.total,coupon:price.coupon,createdAt:now,idempotencyKey:input.idempotencyKey||uid(),reservation:'RESERVED',history:[{status:'PENDING_CONFIRMATION',actor:'customer',time:now,note:'Đơn hàng demo được tạo'}],paymentAttempts:online?[{id:uid(),status:'PENDING',time:now}]:[],reference:input.paymentMethod==='BANK_DEMO'?id.replaceAll('-',''):null};
-    for(const item of order.items)this.data.inventory[item.sku].reserved+=item.qty;
+    // Đơn đã được máy chủ (MySQL) chấp nhận: dùng mã đơn, giá và tổng tiền do máy chủ tính.
+    const price=input.server?this.serverPrice(input.server):this.estimate(lines,input.couponCode,delivery,address.province);
+    const now=input.server?.createdAt||new Date().toISOString(),id=input.server?.id||`NT-${Date.now()}-${uid().slice(0,6).toUpperCase()}`,online=input.paymentMethod!=='COD';
+    const order={id,sync:input.server?{accessToken:input.accessToken}:null,owner:this.owner(),customer:clone(address),delivery,paymentMethod:input.paymentMethod,paymentStatus:online?'PENDING':'UNPAID',status:'PENDING_CONFIRMATION',items:price.items,subtotal:price.subtotal,discount:price.discount,shipping:price.shipping,total:price.total,coupon:price.coupon,createdAt:now,idempotencyKey:input.idempotencyKey||uid(),reservation:'RESERVED',history:[{status:'PENDING_CONFIRMATION',actor:'customer',time:now,note:'Đơn hàng demo được tạo'}],paymentAttempts:online?[{id:uid(),status:'PENDING',time:now}]:[],reference:input.paymentMethod==='BANK_DEMO'?id.replaceAll('-',''):null};
+    for(const item of order.items)if(this.data.inventory[item.sku])this.data.inventory[item.sku].reserved+=item.qty;
     this.data.orders.unshift(order);
     if(!this.sessionStorage.getItem('nx_buy_now'))this.data.carts[this.owner()]=this.cart().filter(line=>!lines.some(item=>item.sku===line.sku));
     this.save();return order;
+  }
+  serverPrice(server){
+    const items=server.items.map(item=>{const found=this.bySku(item.sku);return{sku:item.sku,productId:found?.product.id,name:item.name,variant:item.variant,unitPrice:item.unitPrice,qty:item.qty,imageIndex:found?.product.imageIndex??0};});
+    return{items,subtotal:server.subtotal,discount:server.discount,shipping:server.shipping,total:server.total,coupon:server.coupon};
+  }
+  // Đồng bộ trạng thái đơn theo kết quả máy chủ sau mỗi thao tác.
+  applyServerState(id,remote){
+    const order=this.data.orders.find(o=>o.id===id);if(!order)return;
+    if(remote.reservation==='RELEASED')this.release(order);
+    if(remote.reservation==='CONSUMED')this.consume(order);
+    if(order.status!==remote.status)order.history.push({status:remote.status,actor:'server',time:new Date().toISOString(),note:'Đồng bộ trạng thái từ máy chủ'});
+    order.status=remote.status;order.paymentStatus=remote.paymentStatus;
+    if(order.paymentAttempts?.length&&['PAID','FAILED'].includes(remote.paymentStatus))order.paymentAttempts.at(-1).status=remote.paymentStatus;
+    this.save();
   }
   orders(){this.expirePendingPayments();return this.session?.role==='ADMIN_DEMO'?this.data.orders:this.data.orders.filter(o=>o.owner===this.owner());}
   order(id){const found=this.data.orders.find(o=>o.id===id);if(!found)throw new Error('Không tìm thấy đơn hàng.');this.requireCustomerOwner(found);return found;}
   audit(action,orderId,note=''){this.data.audit.unshift({id:uid(),action,orderId,actor:this.session?.email||this.session?.role||'guest',time:new Date().toISOString(),note});}
   release(order){
     if(order.reservation!=='RESERVED')return;
-    for(const item of order.items)this.data.inventory[item.sku].reserved-=item.qty;
+    for(const item of order.items)if(this.data.inventory[item.sku])this.data.inventory[item.sku].reserved-=item.qty;
     order.reservation='RELEASED';
   }
   consume(order){
     if(order.reservation!=='RESERVED')return;
-    for(const item of order.items){this.data.inventory[item.sku].reserved-=item.qty;this.data.inventory[item.sku].onHand-=item.qty;}
+    for(const item of order.items){const entry=this.data.inventory[item.sku];if(!entry)continue;entry.reserved-=item.qty;entry.onHand-=item.qty;}
     order.reservation='CONSUMED';
   }
   expirePendingPayments(now=Date.now()){

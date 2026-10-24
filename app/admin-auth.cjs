@@ -83,6 +83,10 @@ function makeAdminRouter({ email, passwordHash }) {
     res.clearCookie(COOKIE_NAME, cookieOptions(req));
     return res.json({ ok: true });
   });
+  router.requireAdmin = (req, res, next) => {
+    if (!authorized(req)) return res.status(401).json({ error: 'Chưa đăng nhập quản trị.' });
+    return next();
+  };
   return router;
 }
 

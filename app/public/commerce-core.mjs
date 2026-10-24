@@ -40,5 +40,5 @@ export function canTransition(order,next){
 }
 export function availableStock(inventory,variant){
   const entry=inventory[variant.sku]||{onHand:variant.stock,reserved:0};
-  return entry.onHand-entry.reserved;
+  return Math.max(0,entry.onHand-entry.reserved);
 }
